@@ -244,7 +244,8 @@ GitHub Actions, two workflows.
 - `checks` and CodeQL's code scanning check are the required status checks for merging. A failing step, or a new high-severity CodeQL alert on a PR, blocks the merge.
 - Least privilege: both workflows set `permissions: contents: read` at the top. Only the jobs that need more get it: `preview` gets `pull-requests: write`, and CodeQL gets `security-events: write`.
 - `preview` and `deploy` ship the exact `dist/` that `checks` tested, not a rebuild.
-- All Wrangler steps use `cloudflare/wrangler-action@v3` with `wranglerVersion` pinned (HundAlder: `4.131.2`), so Wrangler is not an npm dependency.
+- All Wrangler steps use Wrangler `4.131.2`, the version HundAlder pins, so Wrangler is not an npm dependency. `preview` and `deploy` use `cloudflare/wrangler-action@v4` (HundAlder: v3; v4 only changes the default Wrangler version). The dry run in `checks` runs Wrangler directly, because it needs no credentials.
+- `preview` is skipped for Dependabot and fork PRs, which cannot read the Cloudflare secrets. `deploy` ends with the e2e smoke test against the production URL.
 - Unlike HundAlder, the workflow has **no `paths-ignore: "**.md"`**. Changes to `SPEC.md` matter here, and with branch protection a skipped required check would leave doc-only PRs unmergeable.
 - Dependabot runs weekly for the `npm` and `github-actions` ecosystems.
 

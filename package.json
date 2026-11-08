@@ -10,10 +10,12 @@
     "dev": "vite",
     "build": "vite build",
     "check": "tsc --noEmit && eslint . --max-warnings 0 && prettier --check .",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "test:e2e": "vite build && playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
     "@types/node": "^24.19.2",
     "@vitest/coverage-v8": "^5.1.0",
     "eslint": "^10.14.0",

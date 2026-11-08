@@ -1,0 +1,164 @@
+name: Build, check & deploy
+
+# Spec 5.4 and 7. Modelled on HundAlder's pipeline: checks on every PR and push,
+# a preview version per PR, and a production deploy that waits for approval.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  WRANGLER_VERSION: "4.131.2"
+  PRODUCTION_URL: https://snipes-web.martin-jo-strand.workers.dev
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Audit dependencies (high and critical)
+        run: npm audit --audit-level=high
+
+      - name: Type check, lint, format check
+        run: npm run check
+
+      - name: Unit and simulation tests with coverage
+        run: npm test
+
+      - run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      # Validates wrangler.jsonc and the assets; needs no Cloudflare credentials.
+      - name: Wrangler dry run
+        run: npx --yes wrangler@${{ env.WRANGLER_VERSION }} deploy --dry-run
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: |
+            coverage
+            playwright-report
+          if-no-files-found: ignore
+
+  preview:
+    name: preview
+    # Dependabot and fork PRs have no access to the Cloudflare secrets.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.actor != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+
+      - name: Upload preview version
+        id: deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: ${{ env.WRANGLER_VERSION }}
+          command: versions upload
+
+      - name: Find preview URL
+        id: preview-url
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          OUTPUT: ${{ steps.deploy.outputs.command-output }}
+        run: |
+          url="$DEPLOYMENT_URL"
+          if [ -z "$url" ]; then
+            url=$(printf '%s' "$OUTPUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | head -n1 || true)
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Comment preview URL on the PR
+        if: steps.preview-url.outputs.url != ''
+        uses: actions/github-script@v9
+        env:
+          URL: ${{ steps.preview-url.outputs.url }}
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Preview: ${process.env.URL}`,
+            });
+
+  deploy:
+    name: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: checks
+    runs-on: ubuntu-latest
+    # Required reviewer martinjostrand-bit, no admin bypass (spec 7).
+    environment:
+      name: production
+      url: ${{ env.PRODUCTION_URL }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+
+      - name: Deploy to production
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: ${{ env.WRANGLER_VERSION }}
+          command: deploy
+
+      # Spec 9.1 WP 02: the production URL shows the title and version.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Smoke test production
+        env:
+          BASE_URL: ${{ env.PRODUCTION_URL }}
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test --project=chromium

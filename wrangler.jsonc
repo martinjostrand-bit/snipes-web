@@ -1,0 +1,6 @@
+// Spec 7: an assets-only Cloudflare Worker serving the build in dist/.
+{
+  "name": "snipes-web",
+  "compatibility_date": "2026-11-08",
+  "assets": { "directory": "./dist" },
+}

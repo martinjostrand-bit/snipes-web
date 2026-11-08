@@ -3,6 +3,9 @@ const canvas = document.querySelector<HTMLCanvasElement>("#screen");
 const ctx = canvas?.getContext("2d");
 
 if (canvas && ctx) {
+  // The canvas text is invisible to screen readers and tests, so it is repeated as a label.
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", `Snipes Web v${__APP_VERSION__}`);
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
   ctx.fillStyle = "#ccc";
