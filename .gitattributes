@@ -1,0 +1,4 @@
+# LF everywhere, also on Windows checkouts (spec 5.6 rule 7).
+* text=auto eol=lf
+*.png binary
+*.ico binary
