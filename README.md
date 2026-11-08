@@ -2,7 +2,7 @@
 
 A single-player browser remake of Snipes, the 1982 text-mode maze shooter. Original code and graphics; only the gameplay is recreated. See [SPEC.md](SPEC.md) for the full specification.
 
-> Status: WP 01 (project skeleton) and WP 02 (CI and deploy) are done. The Claude Code configuration (WP 03) is next.
+> Status: M0 (skeleton) is done: WP 01 (project skeleton), WP 02 (CI and deploy) and WP 03 (Claude Code configuration). M1 (maze and movement) is next, starting with WP 04.
 
 **Live:** https://snipes-web.martin-jo-strand.workers.dev
 
