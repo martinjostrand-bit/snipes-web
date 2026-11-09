@@ -11,13 +11,15 @@ Implement work package $wp from 9.1 of `SPEC.md`. Handle only this work package.
 
 ## Before starting
 
+Run `git fetch --prune origin`. If local `main` is only behind `origin/main` (`git rev-list origin/main..main` prints nothing), fast-forward it without asking: `git merge --ff-only origin/main` when `main` is checked out, otherwise `git fetch origin main:main`.
+
 Stop and tell Martin if any of these fails:
 
-- The working tree is clean, and local `main` matches `origin/main` after `git fetch`.
+- The working tree is clean, and local `main` has no commits that are not on `origin/main`.
 - Every dependency of $wp in 9.1 is done: `git log origin/main --oneline` has a commit whose subject ends with `(WP NN)` for it. "all" means every other package.
 - No branch `wp$wp` exists yet, locally or on `origin`.
 
-Then create the branch: `git switch -c wp$wp origin/main`.
+Then create the branch: `git switch -c wp$wp --no-track origin/main`.
 
 ## 1. Tests
 
