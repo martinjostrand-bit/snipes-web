@@ -2,7 +2,7 @@
 
 A single-player browser remake of Snipes, the 1982 text-mode maze shooter. Original code and graphics; only the gameplay is recreated. See [SPEC.md](SPEC.md) for the full specification.
 
-> Status: M0 (skeleton) is done: WP 01 (project skeleton), WP 02 (CI and deploy) and WP 03 (Claude Code configuration). M1 (maze and movement) is next, starting with WP 04.
+> Status: M0 (skeleton) and M1 (maze and movement) are done. The game shows a random maze that scrolls with the player, who moves with the arrow keys (Space = faster). M2 (shooting) is next, starting with WP 08.
 
 **Live:** https://snipes-web.martin-jo-strand.workers.dev
 
@@ -40,12 +40,13 @@ To roll back: `npx wrangler rollback`, or Cloudflare dashboard → Worker → **
 
 ## Layout
 
-| Path          | Purpose                                         |
-| ------------- | ----------------------------------------------- |
-| `src/core/`   | Pure game logic (from WP 04)                    |
-| `src/input/`  | Maps the keys held to an `InputState` (WP 06)   |
-| `src/main.ts` | Entry point; draws the title and version for M0 |
-| `tests/unit/` | Unit tests                                      |
-| `tests/e2e/`  | Playwright tests                                |
-| `.github/`    | Workflows and Dependabot                        |
-| `SPEC.md`     | Specification                                   |
+| Path          | Purpose                                                            |
+| ------------- | ------------------------------------------------------------------ |
+| `src/core/`   | Pure game logic (from WP 04)                                       |
+| `src/input/`  | Maps the keys held to an `InputState` (WP 06)                      |
+| `src/render/` | Draws the view around the player and the title and version (WP 07) |
+| `src/main.ts` | Entry point; wires the layers and runs the loop                    |
+| `tests/unit/` | Unit tests                                                         |
+| `tests/e2e/`  | Playwright tests                                                   |
+| `.github/`    | Workflows and Dependabot                                           |
+| `SPEC.md`     | Specification                                                      |
