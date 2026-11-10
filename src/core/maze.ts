@@ -18,6 +18,16 @@ export function generateMaze(
   width: number,
   height: number,
 ): Grid {
+  return generateMazeFrom(createRng(seed), width, height)[0];
+}
+
+// Spec 4.3: a new game draws its maze from the PRNG in its state, so this also returns the
+// PRNG moved past the numbers the maze used.
+export function generateMazeFrom(
+  start: Rng,
+  width: number,
+  height: number,
+): [maze: Grid, next: Rng] {
   checkSize("width", width);
   checkSize("height", height);
   const cells = new Array<Cell>(width * height).fill("wall");
@@ -28,7 +38,7 @@ export function generateMaze(
   const roomsY = height / 2;
   const visited = new Set<number>([0]);
   const stack = [{ x: 0, y: 0 }];
-  let rng = createRng(seed);
+  let rng = start;
   let pick: number;
   open(0, 0);
   while (stack.length > 0) {
@@ -59,9 +69,9 @@ export function generateMaze(
   // right edges and one across the top and bottom. Extra passages disconnect nothing.
   [pick, rng] = randomInt(rng, roomsY);
   open(width - 1, 2 * pick);
-  [pick] = randomInt(rng, roomsX);
+  [pick, rng] = randomInt(rng, roomsX);
   open(2 * pick, height - 1);
-  return { width, height, cells };
+  return [{ width, height, cells }, rng];
 }
 
 function checkSize(name: string, size: number): void {
