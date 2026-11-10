@@ -41,22 +41,71 @@ describe("2.8 Controls: arrow keys move in 8 directions", () => {
     },
   );
 
-  it("keeps the vertical direction when both horizontal keys are held", () => {
-    const input = inputFromKeys(held("ArrowLeft", "ArrowRight", "ArrowUp"));
-    expect(input.moveY).toBe(-1);
-    expect([-1, 0, 1]).toContain(input.moveX);
-  });
-
-  it("keeps the horizontal direction when both vertical keys are held", () => {
-    const input = inputFromKeys(held("ArrowUp", "ArrowDown", "ArrowRight"));
-    expect(input.moveX).toBe(1);
-    expect([-1, 0, 1]).toContain(input.moveY);
-  });
-
   it("does not change the set of keys it is given", () => {
     const keys = new Set(["ArrowUp", "Space"]);
     inputFromKeys(keys);
     expect([...keys]).toEqual(["ArrowUp", "Space"]);
+  });
+});
+
+describe("2.8 Controls: opposite movement keys cancel", () => {
+  it("does not move with Left and Right held together", () => {
+    expect(inputFromKeys(held("ArrowLeft", "ArrowRight"))).toEqual(NO_INPUT);
+    expect(inputFromKeys(held("ArrowRight", "ArrowLeft"))).toEqual(NO_INPUT);
+  });
+
+  it("does not move with Up and Down held together", () => {
+    expect(inputFromKeys(held("ArrowUp", "ArrowDown"))).toEqual(NO_INPUT);
+    expect(inputFromKeys(held("ArrowDown", "ArrowUp"))).toEqual(NO_INPUT);
+  });
+
+  it.each([
+    ["ArrowUp", -1],
+    ["ArrowDown", 1],
+  ])(
+    "keeps only the vertical direction with Left, Right and %s held",
+    (vertical, moveY) => {
+      const expected = { moveX: 0, moveY, fast: false };
+      expect(
+        inputFromKeys(held("ArrowLeft", "ArrowRight", vertical)),
+      ).toMatchObject(expected);
+      expect(
+        inputFromKeys(held(vertical, "ArrowRight", "ArrowLeft")),
+      ).toMatchObject(expected);
+    },
+  );
+
+  it.each([
+    ["ArrowLeft", -1],
+    ["ArrowRight", 1],
+  ])(
+    "keeps only the horizontal direction with Up, Down and %s held",
+    (horizontal, moveX) => {
+      const expected = { moveX, moveY: 0, fast: false };
+      expect(
+        inputFromKeys(held("ArrowUp", "ArrowDown", horizontal)),
+      ).toMatchObject(expected);
+      expect(
+        inputFromKeys(held(horizontal, "ArrowDown", "ArrowUp")),
+      ).toMatchObject(expected);
+    },
+  );
+
+  it("does nothing with all four arrow keys held", () => {
+    expect(
+      inputFromKeys(held("ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight")),
+    ).toEqual(NO_INPUT);
+  });
+
+  it("keeps Space when an axis is cancelled", () => {
+    expect(
+      inputFromKeys(held("ArrowLeft", "ArrowRight", "ArrowDown", "Space")),
+    ).toMatchObject({ moveX: 0, moveY: 1, fast: true });
+    expect(
+      inputFromKeys(
+        held("ArrowRight", "ArrowLeft", "Space", "ArrowDown", "ArrowUp"),
+      ),
+    ).toMatchObject({ moveX: 0, moveY: 0, fast: true });
   });
 });
 

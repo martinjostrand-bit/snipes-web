@@ -9,7 +9,8 @@ import {
 } from "../../src/core/state";
 
 // Spec 2.1, 2.2, 4.3 and 9.1 WP 06: the player moves one cell at a time in 8 directions,
-// faster while Space is held, is blocked by walls and wraps around at all four edges.
+// faster while Space is held, is blocked by walls, slides along a wall when a diagonal is
+// blocked, never squeezes through a corner gap and wraps around at all four edges.
 // The game state holds the maze (`maze`) and the player's cell (`player.x`, `player.y`).
 // A test places the player in its own maze by copying a new game and replacing those, so any
 // other fields of the state and the player keep the values a new game starts with.
@@ -73,6 +74,24 @@ function hold(state: GameState, input: InputState, ticks: number): Point[] {
     path.push(at(current));
   }
   return path;
+}
+
+// The cells the player stood on, in order, without repeats for the ticks it stayed.
+function distinct(path: readonly Point[]): Point[] {
+  return path.filter(
+    (p, i) => i === 0 || p.x !== path[i - 1].x || p.y !== path[i - 1].y,
+  );
+}
+
+// For each tick, whether the player left its cell on that tick.
+function moveTicks(path: readonly Point[]): boolean[] {
+  return path.slice(1).map((p, i) => p.x !== path[i].x || p.y !== path[i].y);
+}
+
+// Ticks until the player first leaves its cell, or Infinity if it does not in 3 * PATIENCE.
+function ticksToFirstMove(state: GameState, input: InputState): number {
+  const moved = moveTicks(hold(state, input, 3 * PATIENCE)).indexOf(true);
+  return moved === -1 ? Infinity : moved + 1;
 }
 
 function cellsMoved(path: readonly Point[]): number {
@@ -296,6 +315,12 @@ describe("2.2 Player: walls block the player", () => {
     for (const p of path) {
       expect(cellAt(corner, p)).toBe("open");
     }
+    // It slides right (2.2), first to (2, 2), then to (3, 2), where every way is shut.
+    expect(distinct(path)).toEqual([
+      { x: 1, y: 2 },
+      { x: 2, y: 2 },
+      { x: 3, y: 2 },
+    ]);
   });
 
   it("can move another way after being blocked", () => {
@@ -308,6 +333,311 @@ describe("2.2 Player: walls block the player", () => {
     const turned = stepUntilMoved(state, move(-1, 0));
     expect(at(turned)).toEqual({ x: 3, y: 3 });
   });
+});
+
+describe("2.2 Player: a diagonal into a wall slides", () => {
+  // A 5 x 5 grid of walls. The player's cell is open, and so are those of the three cells on
+  // the way (diagonal, horizontal, vertical) that a case names. Neighbours wrap (2.1), so the
+  // player also starts in the corner its diagonal leaves through, with all three across edges.
+  const SIZE = 5;
+  const m = (n: number): number => (n + SIZE) % SIZE;
+
+  type Outcome = "diagonal" | "horizontal" | "vertical" | "stays";
+  const RULES: [
+    diagonal: boolean,
+    horizontal: boolean,
+    vertical: boolean,
+    outcome: Outcome,
+  ][] = [
+    [true, true, true, "diagonal"],
+    [true, true, false, "diagonal"],
+    [true, false, true, "diagonal"],
+    [true, false, false, "stays"], // a corner gap (2.1)
+    [false, true, true, "horizontal"],
+    [false, true, false, "horizontal"],
+    [false, false, true, "vertical"],
+    [false, false, false, "stays"],
+  ];
+
+  const STARTS: [where: string, from: (dx: Axis, dy: Axis) => Point][] = [
+    ["in the middle", () => ({ x: 2, y: 2 })],
+    [
+      "across the edges",
+      (dx, dy) => ({ x: dx < 0 ? 0 : SIZE - 1, y: dy < 0 ? 0 : SIZE - 1 }),
+    ],
+  ];
+
+  const word = (open: boolean): string => (open ? "open" : "wall");
+
+  const cases = DIRECTIONS.filter(([, dx, dy]) => dx !== 0 && dy !== 0).flatMap(
+    ([name, dx, dy]) =>
+      STARTS.flatMap(([where, from]) =>
+        RULES.map(
+          ([diagonal, horizontal, vertical, outcome]) =>
+            [
+              `${name} ${where}, diagonal ${word(diagonal)}, horizontal ${word(horizontal)}, vertical ${word(vertical)}: ${outcome}`,
+              dx,
+              dy,
+              from(dx, dy),
+              diagonal,
+              horizontal,
+              vertical,
+              outcome,
+            ] as const,
+        ),
+      ),
+  );
+
+  it.each(cases)(
+    "%s",
+    (_name, dx, dy, from, diagonal, horizontal, vertical, outcome) => {
+      const open = [from];
+      if (diagonal) open.push({ x: from.x + dx, y: from.y + dy });
+      if (horizontal) open.push({ x: from.x + dx, y: from.y });
+      if (vertical) open.push({ x: from.x, y: from.y + dy });
+      const keys = new Set(open.map(({ x, y }) => `${m(x)},${m(y)}`));
+      const maze = createGrid(SIZE, SIZE, ({ x, y }) =>
+        keys.has(`${x},${y}`) ? "open" : "wall",
+      );
+
+      for (const fast of [false, true]) {
+        const start = place(maze, from);
+        if (outcome === "stays") {
+          const path = hold(start, move(dx, dy, fast), 3 * PATIENCE);
+          expect(cellsMoved(path)).toBe(0);
+          continue;
+        }
+        const target =
+          outcome === "diagonal"
+            ? { x: from.x + dx, y: from.y + dy }
+            : outcome === "horizontal"
+              ? { x: from.x + dx, y: from.y }
+              : { x: from.x, y: from.y + dy };
+        const moved = stepUntilMoved(start, move(dx, dy, fast));
+        expect(at(moved)).toEqual({ x: m(target.x), y: m(target.y) });
+      }
+    },
+  );
+
+  // Down-right from (1, 1): along the wall below to (4, 1), diagonally to (6, 3) where the
+  // wall ends, then along the bottom wall to (8, 3), where every way is shut.
+  const ledge = [
+    "##########",
+    "#........#",
+    "#####....#",
+    "#........#",
+    "##########",
+  ];
+  const ledgePath: Point[] = [
+    { x: 1, y: 1 },
+    { x: 2, y: 1 },
+    { x: 3, y: 1 },
+    { x: 4, y: 1 },
+    { x: 5, y: 2 },
+    { x: 6, y: 3 },
+    { x: 7, y: 3 },
+    { x: 8, y: 3 },
+  ];
+
+  it.each([false, true])(
+    "slides along a wall and steps diagonally again where it ends (fast: %s)",
+    (fast) => {
+      const maze = gridFrom(ledge);
+      const path = hold(
+        place(maze, { x: 1, y: 1 }),
+        move(1, 1, fast),
+        20 * PATIENCE,
+      );
+      expect(distinct(path)).toEqual(ledgePath);
+    },
+  );
+
+  it.each([false, true])(
+    "slides vertically along a wall when the horizontal cell is a wall too (fast: %s)",
+    (fast) => {
+      // The same room mirrored on its diagonal: the walls now block the horizontal step.
+      const transposed = ledge[0]
+        .split("")
+        .map((_, x) => ledge.map((row) => row[x]).join(""));
+      const maze = gridFrom(transposed);
+      const path = hold(
+        place(maze, { x: 1, y: 1 }),
+        move(1, 1, fast),
+        20 * PATIENCE,
+      );
+      expect(distinct(path)).toEqual(
+        ledgePath.map(({ x, y }) => ({ x: y, y: x })),
+      );
+    },
+  );
+
+  // One-cell corridors with walls on both sides; they wrap round at their ends.
+  const across = createGrid(151, 3, ({ y }) => (y === 1 ? "open" : "wall"));
+  const downwards = createGrid(3, 151, ({ x }) => (x === 1 ? "open" : "wall"));
+
+  it.each(DIRECTIONS.filter(([, dx, dy]) => dx !== 0 && dy !== 0))(
+    "slides %s along a corridor as one normal step at a time, tick for tick",
+    (_name, dx, dy) => {
+      for (const fast of [false, true]) {
+        const sideways = hold(
+          place(across, { x: 75, y: 1 }),
+          move(dx, dy, fast),
+          PATIENCE,
+        );
+        const straight = hold(
+          place(across, { x: 75, y: 1 }),
+          move(dx, 0, fast),
+          PATIENCE,
+        );
+        expect(cellsMoved(straight)).toBeGreaterThanOrEqual(2);
+        expect(sideways).toEqual(straight);
+
+        const upOrDown = hold(
+          place(downwards, { x: 1, y: 75 }),
+          move(dx, dy, fast),
+          PATIENCE,
+        );
+        const vertical = hold(
+          place(downwards, { x: 1, y: 75 }),
+          move(0, dy, fast),
+          PATIENCE,
+        );
+        expect(cellsMoved(vertical)).toBeGreaterThanOrEqual(2);
+        expect(upOrDown).toEqual(vertical);
+      }
+    },
+  );
+
+  it.each(DIRECTIONS.filter(([, dx, dy]) => dx !== 0 && dy !== 0))(
+    "takes a diagonal step %s as often as a straight step",
+    (_name, dx, dy) => {
+      for (const fast of [false, true]) {
+        const diagonal = hold(
+          place(field, centre),
+          move(dx, dy, fast),
+          PATIENCE,
+        );
+        const straight = hold(
+          place(field, centre),
+          move(dx, 0, fast),
+          PATIENCE,
+        );
+        expect(cellsMoved(diagonal)).toBeGreaterThanOrEqual(2);
+        expect(moveTicks(diagonal)).toEqual(moveTicks(straight));
+      }
+    },
+  );
+});
+
+describe("2.1 Maze: no corner gaps for the player", () => {
+  // Two rooms that touch only where (2, 2) and (3, 3) meet at a corner.
+  const rooms = gridFrom([
+    "#######",
+    "#..####",
+    "#..####",
+    "###..##",
+    "###..##",
+    "#######",
+  ]);
+
+  it.each([false, true])(
+    "cannot pass diagonally between two walls that touch at a corner (fast: %s)",
+    (fast) => {
+      const down = hold(
+        place(rooms, { x: 1, y: 1 }),
+        move(1, 1, fast),
+        4 * PATIENCE,
+      );
+      expect(distinct(down)).toEqual([
+        { x: 1, y: 1 },
+        { x: 2, y: 2 },
+      ]);
+
+      const up = hold(
+        place(rooms, { x: 4, y: 4 }),
+        move(-1, -1, fast),
+        4 * PATIENCE,
+      );
+      expect(distinct(up)).toEqual([
+        { x: 4, y: 4 },
+        { x: 3, y: 3 },
+      ]);
+    },
+  );
+
+  it.each([false, true])(
+    "cannot pass through a corner gap across the edges (fast: %s)",
+    (fast) => {
+      // The rooms at the top-left and bottom-right touch only through the wrapping corner.
+      const wrapped = gridFrom([
+        "..####",
+        "..####",
+        "######",
+        "######",
+        "####..",
+        "####..",
+      ]);
+      const upLeft = hold(
+        place(wrapped, { x: 1, y: 1 }),
+        move(-1, -1, fast),
+        4 * PATIENCE,
+      );
+      expect(distinct(upLeft)).toEqual([
+        { x: 1, y: 1 },
+        { x: 0, y: 0 },
+      ]);
+
+      const downRight = hold(
+        place(wrapped, { x: 4, y: 4 }),
+        move(1, 1, fast),
+        4 * PATIENCE,
+      );
+      expect(distinct(downRight)).toEqual([
+        { x: 4, y: 4 },
+        { x: 5, y: 5 },
+      ]);
+    },
+  );
+});
+
+describe("2.2 Player: staying put does not use up a step", () => {
+  // A dead end: the corridor at y = 1 is open from x = 75 rightwards, and the player is at
+  // its closed end, so all of these directions keep it where it is.
+  const deadEnd = createGrid(151, 3, ({ x, y }) =>
+    y === 1 && x >= 75 ? "open" : "wall",
+  );
+  const end = { x: 75, y: 1 };
+  const BLOCKED: [name: string, dx: Axis, dy: Axis][] = [
+    ["left", -1, 0],
+    ["up", 0, -1],
+    ["down", 0, 1],
+    ["up-left", -1, -1],
+    ["down-left", -1, 1],
+  ];
+
+  it.each(BLOCKED)(
+    "holding %s against the wall does not delay the next step",
+    (_name, dx, dy) => {
+      for (const fast of [false, true]) {
+        let blocked = place(deadEnd, end);
+        let idle = blocked;
+        for (let ticks = 1; ticks <= PATIENCE; ticks++) {
+          blocked = step(blocked, move(dx, dy, fast));
+          idle = step(idle, move(0, 0, fast));
+          expect(at(blocked)).toEqual(end);
+
+          // Turning to the open side after `ticks` ticks against the wall moves the player
+          // no later than after the same time with no direction held.
+          const right = move(1, 0, fast);
+          const afterIdle = ticksToFirstMove(idle, right);
+          expect(afterIdle).toBeLessThan(Infinity);
+          expect(ticksToFirstMove(blocked, right)).toBeLessThanOrEqual(
+            afterIdle,
+          );
+        }
+      }
+    },
+  );
 });
 
 describe("2.1 Maze / 2.2 Player: wraps around at all four edges", () => {
