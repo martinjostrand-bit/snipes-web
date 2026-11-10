@@ -43,6 +43,7 @@ To roll back: `npx wrangler rollback`, or Cloudflare dashboard → Worker → **
 | Path          | Purpose                                         |
 | ------------- | ----------------------------------------------- |
 | `src/core/`   | Pure game logic (from WP 04)                    |
+| `src/input/`  | Maps the keys held to an `InputState` (WP 06)   |
 | `src/main.ts` | Entry point; draws the title and version for M0 |
 | `tests/unit/` | Unit tests                                      |
 | `tests/e2e/`  | Playwright tests                                |
