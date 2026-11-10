@@ -1,9 +1,10 @@
 # Snipes Web — Specification
 
-Nov 8, 2026 · @Martin · Draft v0.3
+Nov 9, 2026 · @Martin · Draft v0.4
 
 - v0.2: sections 5 and 7 filled in from the HundAlder project's GitHub and publishing setup.
 - v0.3: CI, build and quality principles adopted from the MissingFiles project (5.2–5.7, 6.3–6.4, 9, 11).
+- v0.4: movement against walls, corner gaps, opposite keys and touching a deadly wall (2.1, 2.2, 2.8, 6.2, 9, 10, 11).
 
 ## 1. Overview and goals
 
@@ -26,15 +27,16 @@ We are building a faithful-in-spirit, single-player browser remake of Snipes, th
 
 ## 2. Gameplay
 
-The game is a grid-based maze shooter: clear every hive and every snipe on a level to win it; lose all lives and the game ends. Rules marked _(verify)_ should be checked against the original before implementation (see Open questions).
+The game is a grid-based maze shooter: clear every hive and every snipe on a level to win it; lose all lives and the game ends. Rules marked _(verify)_ should be checked against the original (see Open questions); until then they may be implemented as written, and a later correction is a spec change.
 
 ### 2.1 Maze
 
 - A rectangular grid of cells, larger than the screen. The view scrolls to keep the player centred.
 - The maze **wraps around** at all four edges.
 - A new maze is **generated randomly** from a seed for every game. The same seed always gives the same maze.
-- Every open cell must be reachable from every other open cell.
+- Every open cell must be reachable from every other open cell by straight steps (up, down, left, right, with wrap-around).
 - Walls are solid for the player, snipes and bullets, unless an option says otherwise.
+- **No corner gaps:** nothing that walls block (the player, snipes and bullets) moves diagonally between two walls that touch at a corner, that is, when both straight neighbours on the way (the horizontal one and the vertical one) are walls, even if the diagonal cell is open. Neighbours are found with wrap-around. Ghosts pass through walls and are not affected. _(verify)_
 
 ### 2.2 Player
 
@@ -42,8 +44,16 @@ The game is a grid-based maze shooter: clear every hive and every snipe on a lev
 - Holding **Space** makes the player move faster.
 - Movement and shooting are **independent**: the player can move one way and fire another.
 - Walls block the player, snipes and bullets (ghosts excepted).
+- **Diagonal moves slide along walls.** Moving diagonally, the player takes the first of these that is possible: _(verify)_
+  1. the diagonal step, if the diagonal cell is open and at least one of the two straight neighbours on the way is open (2.1, no corner gaps);
+  2. one cell in the held horizontal direction, if that cell is open;
+  3. one cell in the held vertical direction, if that cell is open.
+
+  Otherwise it stays put. Each of these is one normal step at the current speed, and neighbours are found with wrap-around. Staying put does not use up a step.
+
 - Has a limited number of lives (default 5). On death the player respawns at a safe spot after a short delay.
 - **Instant death** on touching an enemy, being hit by an enemy bullet, or touching a wall when deadly walls are on (see 2.6).
+- **Touching a wall** means that a held movement direction would take the player into a wall cell: a straight step into a wall, or a diagonal whose diagonal cell is a wall. With deadly walls on, this kills the player and no slide happens. Passing next to a wall is not touching it. _(verify)_
 
 ### 2.3 Hives (generators)
 
@@ -121,6 +131,8 @@ The letter-to-feature mapping lives in one small lookup table in `core/`, so it 
 | Fire        | W A S D (diagonal = two keys held)    |
 | Pause       | P or Esc                              |
 | Restart     | R (from the game-over screen)         |
+
+Holding two opposite keys of the same group (Left+Right, Up+Down, A+D, W+S) cancels that axis; the other axis still works. Holding all four keys of a group does nothing. _(verify)_
 
 Keys are rebindable later only if asked for; the first version has fixed keys. Gamepad and touch are out of scope.
 
@@ -326,7 +338,7 @@ Rendering and audio are not unit-tested; they are covered by e2e smoke tests and
 
 ### 6.2 Invariants checked in simulation
 
-- Every open cell is reachable; no player, snipe or bullet is ever inside a wall (ghosts may be).
+- Every open cell is reachable by straight steps; no player, snipe or bullet is ever inside a wall (ghosts may be).
 - A hive is destroyed after exactly 20 hits, never earlier or later; a destroyed hive never spawns again.
 - The number of enemies never exceeds the digit's maximum; counts never go negative.
 - Each letter enables exactly the features in the 2.6 table, no more.
@@ -417,6 +429,7 @@ Six milestones, each a small playable step that ends with green CI and a deploy.
 2. **M1 – Maze and movement.** Seeded maze generation, scrolling view, wrap-around, player moving in 8 directions.
    - Unit: every open cell reachable for 1,000 random seeds.
    - Unit: player cannot enter a wall; wraps correctly at all four edges.
+   - Unit: a diagonal into a wall slides as in 2.2; no diagonal step through a corner gap (2.1); opposite movement keys cancel (2.8).
 3. **M2 – Shooting.** Bullets in 8 directions, independent of movement; stop at walls.
    - Unit: a bullet fired along a corridor stops at the first wall.
 4. **M3 – Hives and snipes.** Hives spawn snipes and ghosts; snipes chase and shoot, ghosts pass through walls and cut the player off; player can kill all three and can die.
@@ -442,7 +455,7 @@ The milestones split into 18 work packages. Each package is one branch, one pull
 | 03  | M0        | Claude Code configuration (5.7): `CLAUDE.md` roles and definition of done, `.claude/settings.json`, agents `test-writer`, `developer`, `verifier`, `spec-reviewer`, skills `/implement-wp`, `/verify`, `/ci-status`, `/release`, verifier hook                                           | Unit: the hook allows the four checks and read-only `git` and blocks everything else; `/verify` on a trivial change gives a verdict in the 6.3 format | 02         | M    |
 | 04  | M1        | Seeded PRNG, cell/grid types, wrap-around coordinates, `GameState`, empty `step()`                                                                                                                                                                                                       | Same seed → same numbers; wrap math at all four edges                                                                                                 | 03         | S    |
 | 05  | M1        | Seeded maze generation                                                                                                                                                                                                                                                                   | All open cells reachable for 1,000 seeds; same seed → same maze                                                                                       | 04         | M    |
-| 06  | M1        | Keyboard → `InputState`; player movement in 8 directions, Space = faster, walls block                                                                                                                                                                                                    | Cannot enter walls; diagonals; wrap-around; speed                                                                                                     | 05         | M    |
+| 06  | M1        | Keyboard → `InputState`; player movement in 8 directions, Space = faster, walls block                                                                                                                                                                                                    | Cannot enter walls; diagonals; diagonal into a wall slides as in 2.2; no corner gaps; opposite keys cancel; wrap-around; speed                        | 05         | M    |
 | 07  | M1        | Canvas renderer, integer scaling, scrolling view centred on player, fixed-tick loop                                                                                                                                                                                                      | E2E: page renders; arrow key moves player                                                                                                             | 06         | M    |
 | 08  | M2        | Bullets in 8 directions, independent of movement; stop at first wall or entity                                                                                                                                                                                                           | Bullet stops at first wall; fire while moving another way                                                                                             | 06         | S    |
 | 09  | M3        | Hives: placement, 20 hits with colour stages, continuous spawning under the enemy cap                                                                                                                                                                                                    | 19 hits survive, 20th destroys; spawning stops; cap never exceeded                                                                                    | 08         | M    |
@@ -481,7 +494,9 @@ A package that grows beyond its size is split rather than stretched.
 - [x] ~~Which GitHub account name and which hosting service did the earlier projects use?~~ Answered from HundAlder: GitHub `martinjostrand-bit`, Cloudflare Workers via GitHub Actions (sections 5.1, 5.4, 7).
 - [x] ~~Version format: keep semver or match HundAlder's `XX.YY.ZZ`?~~ Decided (Nov 8): keep plain semver on the title screen (5.5).
 - [x] ~~Should the Worker name wait for the public release name?~~ Decided (Nov 8): use `snipes-web` for now. A rename after the release-name decision changes the `workers.dev` URL.
-- [ ] Confirm original rules marked _(verify)_: whether ghosts shoot, whether bounced shots can hit the player, what follows a cleared level. Hive 20 hits and point values come from Martin's description; no source found yet. Reference: the reverse-engineered [Snipes source on GitHub](https://github.com/Davidebyzero/Snipes), used for behaviour only, never copied.
+- [ ] Confirm original rules marked _(verify)_: whether ghosts shoot, whether bounced shots can hit the player, what follows a cleared level, the diagonal slide order, corner gaps, opposite keys cancelling, and what counts as touching a deadly wall. Hive 20 hits and point values come from Martin's description; no source found yet. Reference: the reverse-engineered [Snipes source on GitHub](https://github.com/Davidebyzero/Snipes), used for behaviour only, never copied.
+- [ ] Corner gaps (2.1) for bullets and snipes, before WP 08, WP 10 and WP 16: does a diagonal bullet at a corner gap stop; which way does a bouncy shot bounce; which wall, if any, does a destroyable-walls shot remove; does a corner gap block a snipe's line of sight? Generated mazes contain no corner gaps, so tests need hand-built grids.
+- [ ] Deadly walls (2.2, 2.6), before WP 17: is touching checked every tick a key is held or only when the next step is due; should a diagonal held in a one-cell corridor kill (its diagonal cell is a wall); confirm a diagonal into a corner gap is safe; after a respawn, is movement ignored until all arrow keys are released? Also add the matching tests to the WP 08, 10, 16 and 17 rows.
 - [ ] Exact maze size and screen view size (original was 80×25 text mode).
 - [ ] Name for public release: "Snipes" belongs to SuperSet Software; a different title (e.g. "Snipe Hunt") may be safer.
 - [ ] License for our own code (MIT suggested; MissingFiles uses MIT).
@@ -490,17 +505,18 @@ A package that grows beyond its size is split rather than stretched.
 
 Decisions are recorded here with their date when they are made, as in MissingFiles.
 
-| Date       | Decision                                                                                                                                                                                              | Ref      |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| 2026-11-08 | GitHub account `martinjostrand-bit`; public repo; protected `main` with pull requests                                                                                                                 | 5.1      |
-| 2026-11-08 | Hosting on Cloudflare Workers via GitHub Actions, with PR previews and an approval gate for production, as in HundAlder                                                                               | 5.4, 7   |
-| 2026-11-08 | Plain semver, defined only in `package.json`                                                                                                                                                          | 5.5      |
-| 2026-11-08 | Worker name `snipes-web` until the public release name is decided                                                                                                                                     | 7, 10    |
-| 2026-11-08 | Build and quality rules adopted from MissingFiles: warnings are errors, enforced coverage, CodeQL and `npm audit`, least-privilege CI                                                                 | 5.4, 5.6 |
-| 2026-11-08 | Claude Code configuration in the repository; independent, read-only verifier; `Verified: PASS` commit trailer                                                                                         | 5.7, 6.3 |
-| 2026-11-08 | Unlike MissingFiles, verified changes go through pull requests, not straight to `main`                                                                                                                | 5.7, 9.2 |
-| 2026-11-08 | LF line endings (MissingFiles uses CRLF because it is Windows-only)                                                                                                                                   | 5.6      |
-| 2026-11-08 | Not adopted from MissingFiles: a CI build number in the version, a packaging script and release zip (the site is deployed, not downloaded), and a nightly performance workflow until a test needs one | 5.5, 5.6 |
+| Date       | Decision                                                                                                                                                                                                                                                                        | Ref                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| 2026-11-08 | GitHub account `martinjostrand-bit`; public repo; protected `main` with pull requests                                                                                                                                                                                           | 5.1                     |
+| 2026-11-08 | Hosting on Cloudflare Workers via GitHub Actions, with PR previews and an approval gate for production, as in HundAlder                                                                                                                                                         | 5.4, 7                  |
+| 2026-11-08 | Plain semver, defined only in `package.json`                                                                                                                                                                                                                                    | 5.5                     |
+| 2026-11-08 | Worker name `snipes-web` until the public release name is decided                                                                                                                                                                                                               | 7, 10                   |
+| 2026-11-08 | Build and quality rules adopted from MissingFiles: warnings are errors, enforced coverage, CodeQL and `npm audit`, least-privilege CI                                                                                                                                           | 5.4, 5.6                |
+| 2026-11-08 | Claude Code configuration in the repository; independent, read-only verifier; `Verified: PASS` commit trailer                                                                                                                                                                   | 5.7, 6.3                |
+| 2026-11-08 | Unlike MissingFiles, verified changes go through pull requests, not straight to `main`                                                                                                                                                                                          | 5.7, 9.2                |
+| 2026-11-08 | LF line endings (MissingFiles uses CRLF because it is Windows-only)                                                                                                                                                                                                             | 5.6                     |
+| 2026-11-08 | Not adopted from MissingFiles: a CI build number in the version, a packaging script and release zip (the site is deployed, not downloaded), and a nightly performance workflow until a test needs one                                                                           | 5.5, 5.6                |
+| 2026-11-09 | Our own movement rules, marked _(verify)_ against the original: a diagonal into a wall slides (horizontal first); no corner gaps for the player, snipes and bullets; opposite movement and fire keys cancel; touching a deadly wall means trying to step into it, with no slide | 2.1, 2.2, 2.8, 6.2, 9.1 |
 
 ## Sources
 
