@@ -1,71 +1,97 @@
 import { cellAt, wrap, type Grid, type Point } from "../core/grid";
+import { PLAYER_SIZE } from "../core/player";
 import type { GameState } from "../core/state";
 
-// Spec 2.1 and 3: the view shows VIEW_COLS x VIEW_ROWS cells of the maze, each CELL_PX square
-// canvas pixels. Odd sizes put the player on the exact middle cell.
-export const VIEW_COLS = 39;
-export const VIEW_ROWS = 21;
-export const CELL_PX = 16;
+// Spec 2.10 and 3: the view shows VIEW_COLS x VIEW_ROWS square cells of the maze, each CELL_PX
+// canvas pixels wide and high, below one HUD row of the same height.
+export const VIEW_COLS = 80;
+export const VIEW_ROWS = 44;
+export const CELL_PX = 8;
+
+// The view cell of the player's top-left cell: as many columns left of the footprint as right
+// of it, and as many rows above as below.
+const PLAYER_COL = (VIEW_COLS - PLAYER_SIZE) / 2;
+const PLAYER_ROW = (VIEW_ROWS - PLAYER_SIZE) / 2;
 
 const FLOOR = "#000";
 const WALL = "#2850c8";
 const PLAYER = "#f0d000";
 const LABEL = "#ccc";
 
-// Spec 2.1: the maze cell, wrapped into the grid, drawn at the top-left of a view of
-// cols x rows cells centred on `centre`.
-export function viewOrigin(
-  maze: Grid,
-  centre: Point,
-  cols: number,
-  rows: number,
-): Point {
-  return wrap(maze, {
-    x: centre.x - Math.floor((cols - 1) / 2),
-    y: centre.y - Math.floor((rows - 1) / 2),
-  });
+// Spec 2.1 and 3: the maze cell, wrapped into the grid, drawn at the top-left of the view
+// that has the player's footprint in its middle.
+export function viewOrigin(maze: Grid, player: Point): Point {
+  return wrap(maze, { x: player.x - PLAYER_COL, y: player.y - PLAYER_ROW });
 }
 
-// Spec 3: draws the part of the maze around the player, with the player in the middle.
+// Spec 3: draws the part of the maze around the player, below the HUD row, with the player in
+// the middle. One maze cell is one square character cell on the canvas.
 export function drawGame(
   ctx: CanvasRenderingContext2D,
   state: GameState,
 ): void {
   const { maze, player } = state;
-  const origin = viewOrigin(maze, player, VIEW_COLS, VIEW_ROWS);
+  const origin = viewOrigin(maze, player);
   ctx.fillStyle = FLOOR;
-  ctx.fillRect(0, 0, VIEW_COLS * CELL_PX, VIEW_ROWS * CELL_PX);
+  ctx.fillRect(0, CELL_PX, VIEW_COLS * CELL_PX, VIEW_ROWS * CELL_PX);
   ctx.fillStyle = WALL;
   for (let row = 0; row < VIEW_ROWS; row++) {
     for (let col = 0; col < VIEW_COLS; col++) {
-      if (cellAt(maze, { x: origin.x + col, y: origin.y + row }) === "wall") {
-        ctx.fillRect(col * CELL_PX, row * CELL_PX, CELL_PX, CELL_PX);
+      const at = { x: origin.x + col, y: origin.y + row };
+      if (cellAt(maze, at) === "wall") {
+        drawWall(ctx, maze, at, col * CELL_PX, (row + 1) * CELL_PX);
       }
     }
   }
-  drawPlayer(
-    ctx,
-    Math.floor((VIEW_COLS - 1) / 2) * CELL_PX,
-    Math.floor((VIEW_ROWS - 1) / 2) * CELL_PX,
-  );
+  drawPlayer(ctx, PLAYER_COL * CELL_PX, (PLAYER_ROW + 1) * CELL_PX);
 }
 
-// Our own glyph for the player: a yellow face with two eyes.
+// Spec 3: walls are double solid lines, joined to the wall cells next to them.
+function drawWall(
+  ctx: CanvasRenderingContext2D,
+  maze: Grid,
+  at: Point,
+  x: number,
+  y: number,
+): void {
+  const wall = (dx: number, dy: number): boolean =>
+    cellAt(maze, { x: at.x + dx, y: at.y + dy }) === "wall";
+  const left = wall(-1, 0);
+  const right = wall(1, 0);
+  const up = wall(0, -1);
+  const down = wall(0, 1);
+  if (left || right) {
+    const from = left ? 0 : 2;
+    const to = right ? CELL_PX : 6;
+    ctx.fillRect(x + from, y + 2, to - from, 1);
+    ctx.fillRect(x + from, y + 5, to - from, 1);
+  }
+  if (up || down) {
+    const from = up ? 0 : 2;
+    const to = down ? CELL_PX : 6;
+    ctx.fillRect(x + 2, y + from, 1, to - from);
+    ctx.fillRect(x + 5, y + from, 1, to - from);
+  }
+}
+
+// Our own glyph for the player, over its 4 x 4 cells: a small spacecraft with swept wings.
 function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number): void {
   ctx.fillStyle = PLAYER;
-  ctx.fillRect(x + 2, y + 2, CELL_PX - 4, CELL_PX - 4);
+  ctx.fillRect(x + 13, y + 4, 6, 24); // body
+  ctx.fillRect(x + 4, y + 14, 24, 6); // wings
+  ctx.fillRect(x + 2, y + 18, 4, 8); // wing tips
+  ctx.fillRect(x + 26, y + 18, 4, 8);
   ctx.fillStyle = FLOOR;
-  ctx.fillRect(x + 5, y + 5, 2, 2);
-  ctx.fillRect(x + 9, y + 5, 2, 2);
+  ctx.fillRect(x + 15, y + 8, 2, 4); // cockpit
 }
 
-// Spec 5.5 and 9 M0: the title and version stay on screen, in the top-left corner over the
-// maze, until the title screen (WP 13) shows them.
+// Spec 5.5 and 9 M0: the title and version stay in the HUD row until the title screen (WP 13)
+// shows them.
 export function drawLabel(ctx: CanvasRenderingContext2D, text: string): void {
-  ctx.font = "12px monospace";
   ctx.fillStyle = FLOOR;
-  ctx.fillRect(0, 0, Math.ceil(ctx.measureText(text).width) + 8, CELL_PX);
+  ctx.fillRect(0, 0, VIEW_COLS * CELL_PX, CELL_PX);
+  ctx.font = `${CELL_PX}px monospace`;
   ctx.fillStyle = LABEL;
   ctx.textBaseline = "middle";
-  ctx.fillText(text, 4, CELL_PX / 2);
+  ctx.fillText(text, CELL_PX, CELL_PX / 2);
 }
