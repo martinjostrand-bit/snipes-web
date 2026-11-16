@@ -23,7 +23,8 @@ if (canvas && ctx) {
   canvas.setAttribute("role", "img");
   canvas.setAttribute("aria-label", TITLE);
   canvas.width = VIEW_COLS * CELL_PX;
-  canvas.height = VIEW_ROWS * CELL_PX;
+  // Spec 3: the view of the maze plus one HUD row.
+  canvas.height = (VIEW_ROWS + 1) * CELL_PX;
 
   // Spec 3: scale in whole-number steps to fit the window, so pixels stay sharp.
   const fit = (): void => {

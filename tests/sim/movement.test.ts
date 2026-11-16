@@ -15,14 +15,17 @@ import {
   type InputState,
 } from "../../src/core/state";
 
-// Spec 2.1, 2.2, 6.2 and 9.1 WP 06: whole games run headless from a seed and scripted
-// input. Every tick the player is inside the grid, never inside a wall and at most one cell
-// (the short way round a wrapping edge) from where it was; the maze is unchanged. Every move
-// is the one 2.2 allows for the keys held: straight into an open cell, a diagonal that is not
-// a corner gap (2.1), or else a slide along the wall, horizontal first.
+// Spec 2.1, 2.2, 2.10, 6.2 and 9.1 WP 06 and WP 07b: whole games run headless from a seed
+// and scripted input. The player covers a 4 x 4 footprint whose top-left cell is its
+// position. Every tick the position is inside the grid, no cell of the footprint is a wall,
+// and the position is at most one cell (the short way round a wrapping edge) from where it
+// was; the maze is unchanged. Every move is the one 2.2 and 2.10 allow for the keys held:
+// straight to an open position, a diagonal that is not a corner gap, or else a slide along
+// the wall, horizontal first, each position tested with the whole footprint.
 
 type Axis = InputState["moveX"];
 
+const SIZE = 4; // the player's footprint is SIZE x SIZE cells (2.10)
 const SEEDS = Array.from({ length: 20 }, (_, i) => i * 7919 + 1);
 const TICKS = 30 * 60; // one minute at 30 ticks/s
 const AXES: Axis[] = [-1, 0, 1];
@@ -41,6 +44,16 @@ function drawer(seed: number): (n: number) => number {
     rng = next;
     return Math.floor(value * n);
   };
+}
+
+// Whether the whole footprint at `p` is on open cells, with wrap-around (2.10).
+function fits(maze: Grid, p: Point): boolean {
+  for (let dy = 0; dy < SIZE; dy++) {
+    for (let dx = 0; dx < SIZE; dx++) {
+      if (cellAt(maze, { x: p.x + dx, y: p.y + dy }) !== "open") return false;
+    }
+  }
+  return true;
 }
 
 function randomInput(draw: (n: number) => number): InputState {
@@ -66,7 +79,7 @@ function inputLog(seed: number, ticks: number): InputState[] {
 }
 
 // A walk that explores the maze: every 5 to 24 ticks it holds a new input. Three times in
-// four that is a straight direction with an open cell next to the player; otherwise it is
+// four that is a straight direction in which the footprint has room to move; otherwise it is
 // any direction or none, so the player also runs into walls, straight and diagonally.
 function explore(
   seed: number,
@@ -80,8 +93,8 @@ function explore(
     let input = randomInput(draw);
     if (draw(4) > 0) {
       const { x, y } = state.player;
-      const open = STRAIGHT.filter(
-        ([dx, dy]) => cellAt(state.maze, { x: x + dx, y: y + dy }) === "open",
+      const open = STRAIGHT.filter(([dx, dy]) =>
+        fits(state.maze, { x: x + dx, y: y + dy }),
       );
       if (open.length > 0) {
         const [moveX, moveY] = open[draw(open.length)];
@@ -112,16 +125,17 @@ function inside(maze: Grid, { x, y }: Point): boolean {
   );
 }
 
-// The only cell the player may move to from `from` with `input` held (2.1, 2.2), or null if it
-// must stay put. A diagonal takes the diagonal cell if it is open and not a corner gap, else
-// the horizontal cell, else the vertical cell, whichever is open first.
+// The only position the player may move to from `from` with `input` held (2.1, 2.2, 2.10),
+// or null if it must stay put. A diagonal takes the diagonal position if its footprint fits
+// and one of the two straight positions fits too, else the horizontal position, else the
+// vertical position, whichever fits first.
 function allowedMove(
   maze: Grid,
   from: Point,
   { moveX, moveY }: InputState,
 ): Point | null {
   const open = (dx: number, dy: number): boolean =>
-    cellAt(maze, { x: from.x + dx, y: from.y + dy }) === "open";
+    fits(maze, { x: from.x + dx, y: from.y + dy });
   const to = (dx: number, dy: number): Point =>
     wrap(maze, { x: from.x + dx, y: from.y + dy });
 
@@ -154,11 +168,11 @@ function ruleProblem(
   return `tick ${tick}: moved ${before.x},${before.y} -> ${after.x},${after.y} holding ${input.moveX},${input.moveY}, allowed ${expected}`;
 }
 
-// A rough, seeded grid: about one cell in three is a wall, so it is full of corner gaps,
-// dead ends and walls to slide along, unlike a generated maze (spec 10).
+// A rough, seeded grid: about one cell in twenty is a wall, scattered, so the footprint
+// meets corner gaps, dead ends and walls to slide along everywhere, unlike a generated maze.
 function roughGrid(seed: number, width: number, height: number): Grid {
   const draw = drawer(seed);
-  return createGrid(width, height, () => (draw(3) === 0 ? "wall" : "open"));
+  return createGrid(width, height, () => (draw(20) === 0 ? "wall" : "open"));
 }
 
 function play(seed: number, log: readonly InputState[]): GameState {
@@ -169,20 +183,25 @@ function play(seed: number, log: readonly InputState[]): GameState {
   return state;
 }
 
-describe("6.2 Invariants: the player is never inside a wall", () => {
+describe("6.2 Invariants: no cell of the player's footprint is ever a wall (2.10)", () => {
   it.each(SEEDS)("holds every tick of a minute's walk (seed %d)", (seed) => {
     const game = createGame(seed);
     const maze = game.maze;
     const visited = new Set<string>();
     const problems: string[] = [];
     let previous: Point = { x: game.player.x, y: game.player.y };
+    if (!fits(maze, previous)) {
+      problems.push(
+        `start: footprint on a wall at ${previous.x},${previous.y}`,
+      );
+    }
 
     const end = explore(seed, TICKS, (state, tick) => {
       const now = { x: state.player.x, y: state.player.y };
       if (!inside(maze, now)) {
         problems.push(`tick ${tick}: outside the grid at ${now.x},${now.y}`);
-      } else if (cellAt(maze, now) !== "open") {
-        problems.push(`tick ${tick}: inside a wall at ${now.x},${now.y}`);
+      } else if (!fits(maze, now)) {
+        problems.push(`tick ${tick}: footprint on a wall at ${now.x},${now.y}`);
       }
       if (
         axisDistance(previous.x, now.x, maze.width) > 1 ||
@@ -203,7 +222,7 @@ describe("6.2 Invariants: the player is never inside a wall", () => {
   });
 });
 
-describe("2.2 Player: every move follows the movement rules", () => {
+describe("2.2 Player: every move follows the movement rules (2.10 footprint)", () => {
   it.each(SEEDS)("in a generated maze (seed %d)", (seed) => {
     const game = createGame(seed);
     const maze = game.maze;
@@ -224,18 +243,18 @@ describe("2.2 Player: every move follows the movement rules", () => {
   });
 
   it.each(SEEDS)("in a rough grid full of corner gaps (seed %d)", (seed) => {
-    const maze = roughGrid(seed, 40, 30);
+    const maze = roughGrid(seed, 60, 45);
     const game = createGame(seed);
-    // Start on the open cell with the most open cells in its 3 x 3 neighbourhood.
+    // Start where the footprint fits with the most fitting positions around it.
     let start: Point = { x: 0, y: 0 };
     let best = -1;
     for (let y = 0; y < maze.height; y++) {
       for (let x = 0; x < maze.width; x++) {
-        if (cellAt(maze, { x, y }) !== "open") continue;
+        if (!fits(maze, { x, y })) continue;
         let around = 0;
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
-            if (cellAt(maze, { x: x + dx, y: y + dy }) === "open") around++;
+            if (fits(maze, { x: x + dx, y: y + dy })) around++;
           }
         }
         if (around > best) {
@@ -244,6 +263,7 @@ describe("2.2 Player: every move follows the movement rules", () => {
         }
       }
     }
+    expect(best).toBeGreaterThan(0);
 
     let state: GameState = {
       ...game,
@@ -256,8 +276,10 @@ describe("2.2 Player: every move follows the movement rules", () => {
       const before = { x: state.player.x, y: state.player.y };
       state = step(state, input);
       const after = { x: state.player.x, y: state.player.y };
-      if (!inside(maze, after) || cellAt(maze, after) !== "open") {
-        problems.push(`tick ${tick}: in a wall at ${after.x},${after.y}`);
+      if (!inside(maze, after) || !fits(maze, after)) {
+        problems.push(
+          `tick ${tick}: footprint on a wall at ${after.x},${after.y}`,
+        );
       }
       const problem = ruleProblem(maze, before, after, input, tick);
       if (problem !== null) problems.push(problem);

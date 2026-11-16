@@ -1,11 +1,12 @@
 import type { Grid } from "./grid";
-import { generateMazeFrom } from "./maze";
+import { generateMazeFrom, WALL_X, WALL_Y } from "./maze";
 import { movePlayer, type Player } from "./player";
 import { createRng, type Rng } from "./rng";
 
-// Maze size in cells. Spec 10 leaves the exact size open; it must be even (see maze.ts).
-const MAZE_WIDTH = 64;
-const MAZE_HEIGHT = 48;
+// Spec 2.10: the player starts as near the middle of a block as it can, leaning up-left: its
+// footprint 5 open cells from the block's left wall and 3 from its top wall.
+const START_X = WALL_X + 1 + 5;
+const START_Y = WALL_Y + 1 + 3;
 
 // Spec 2.2 and 2.8: the keys held this tick. y grows downwards, so up is moveY = -1.
 export interface InputState {
@@ -25,22 +26,8 @@ export interface GameState {
 }
 
 export function createGame(seed: number): GameState {
-  const [maze, rng] = generateMazeFrom(
-    createRng(seed),
-    MAZE_WIDTH,
-    MAZE_HEIGHT,
-  );
-  // Every open cell is reachable (2.1), so the first one is as good a start as any.
-  const start = maze.cells.indexOf("open");
-  return {
-    rng,
-    maze,
-    player: {
-      x: start % maze.width,
-      y: Math.floor(start / maze.width),
-      wait: 0,
-    },
-  };
+  const [maze, rng] = generateMazeFrom(createRng(seed));
+  return { rng, maze, player: { x: START_X, y: START_Y, wait: 0 } };
 }
 
 export function step(state: GameState, input: InputState): GameState {
