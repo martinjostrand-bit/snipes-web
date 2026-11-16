@@ -16,6 +16,8 @@ const PLAYER_ROW = (VIEW_ROWS - PLAYER_SIZE) / 2;
 const FLOOR = "#000";
 const WALL = "#2850c8";
 const PLAYER = "#f0d000";
+const SHOT = "#f0f0f0";
+const GUN = "#e04030";
 const LABEL = "#ccc";
 
 // Spec 2.1 and 3: the maze cell, wrapped into the grid, drawn at the top-left of the view
@@ -43,7 +45,24 @@ export function drawGame(
       }
     }
   }
-  drawPlayer(ctx, PLAYER_COL * CELL_PX, (PLAYER_ROW + 1) * CELL_PX);
+  // Spec 2.10: shots, cut at the view's edge so that they never cover the HUD row.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, CELL_PX, VIEW_COLS * CELL_PX, VIEW_ROWS * CELL_PX);
+  ctx.clip();
+  for (const shot of state.shots) {
+    // The view column and row of the shot's top-left cell, from -1 so that a shot is also
+    // drawn when only its right or lower cells are in the view.
+    const at = wrap(maze, {
+      x: shot.x - origin.x + 1,
+      y: shot.y - origin.y + 1,
+    });
+    if (at.x <= VIEW_COLS && at.y <= VIEW_ROWS) {
+      drawShot(ctx, (at.x - 1) * CELL_PX, at.y * CELL_PX);
+    }
+  }
+  ctx.restore();
+  drawPlayer(ctx, PLAYER_COL * CELL_PX, (PLAYER_ROW + 1) * CELL_PX, state.aim);
 }
 
 // Spec 3: walls are double solid lines, joined to the wall cells next to them.
@@ -74,8 +93,14 @@ function drawWall(
   }
 }
 
-// Our own glyph for the player, over its 4 x 4 cells: a small spacecraft with swept wings.
-function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+// Our own glyph for the player, over its 4 x 4 cells: a small spacecraft with swept wings and
+// two guns pointing in the last firing direction `aim` (spec 3).
+function drawPlayer(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  aim: Point,
+): void {
   ctx.fillStyle = PLAYER;
   ctx.fillRect(x + 13, y + 4, 6, 24); // body
   ctx.fillRect(x + 4, y + 14, 24, 6); // wings
@@ -83,6 +108,26 @@ function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number): void {
   ctx.fillRect(x + 26, y + 18, 4, 8);
   ctx.fillStyle = FLOOR;
   ctx.fillRect(x + 15, y + 8, 2, 4); // cockpit
+  // Each gun is three 2 x 2 pixel dots on a line from the middle in the aim direction, 3 pixels
+  // to either side of it, ending inside the footprint also when aimed diagonally.
+  ctx.fillStyle = GUN;
+  for (const side of [-3, 3]) {
+    for (const reach of [8, 10, 12]) {
+      ctx.fillRect(
+        x + 15 + aim.x * reach - aim.y * side,
+        y + 15 + aim.y * reach + aim.x * side,
+        2,
+        2,
+      );
+    }
+  }
+}
+
+// Our own glyph for a shot, over its 2 x 2 cells: a small spark in the shape of a plus.
+function drawShot(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.fillStyle = SHOT;
+  ctx.fillRect(x + 6, y + 3, 4, 10);
+  ctx.fillRect(x + 3, y + 6, 10, 4);
 }
 
 // Spec 5.5 and 9 M0: the title and version stay in the HUD row until the title screen (WP 13)

@@ -1,12 +1,15 @@
 import type { InputState } from "../core/state";
 
-// Spec 2.8: arrow keys move (diagonal = two keys held), Space moves faster. `held` holds the
-// `KeyboardEvent.code` of every key down. Opposite keys held together cancel out.
+// Spec 2.8: arrow keys move (diagonal = two keys held), Space moves faster, W A S D fire
+// (diagonal = two keys held). `held` holds the `KeyboardEvent.code` of every key down.
+// Opposite keys held together cancel out.
 export function inputFromKeys(held: ReadonlySet<string>): InputState {
   return {
     moveX: axis(held.has("ArrowLeft"), held.has("ArrowRight")),
     moveY: axis(held.has("ArrowUp"), held.has("ArrowDown")),
     fast: held.has("Space"),
+    fireX: axis(held.has("KeyA"), held.has("KeyD")),
+    fireY: axis(held.has("KeyW"), held.has("KeyS")),
   };
 }
 
