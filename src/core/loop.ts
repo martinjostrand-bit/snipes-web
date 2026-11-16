@@ -1,7 +1,7 @@
 import { step, type GameState, type InputState } from "./state";
 
-// Spec 4.3: game logic runs at a fixed 30 ticks per second, whatever the frame rate.
-export const TICK_MS = 1000 / 30;
+// Spec 4.3: game logic runs at a fixed 60 ticks per second, whatever the frame rate.
+export const TICK_MS = 1000 / 60;
 
 // Spec 4.3: the accumulator loop. Runs one step for every whole tick in the time carried over
 // from earlier frames plus this frame's, and carries the rest over to the next frame.

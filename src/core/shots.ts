@@ -4,10 +4,6 @@ import { PLAYER_SIZE } from "./player";
 // Spec 2.10: a shot covers SHOT_SIZE x SHOT_SIZE cells; its position is the top-left one.
 const SHOT_SIZE = 2;
 
-// Spec 2.5: cells a shot moves per tick, faster than any creature (the player moves at most
-// one cell every two ticks).
-const SHOT_SPEED = 2;
-
 export interface Shot {
   readonly x: number;
   readonly y: number;
@@ -44,10 +40,10 @@ function spawnOffset(d: -1 | 0 | 1): number {
   return d > 0 ? PLAYER_SIZE : (PLAYER_SIZE - SHOT_SIZE) / 2;
 }
 
-// Spec 2.1, 2.5 and 2.10: moves every shot on by one tick, one cell at a time along its line.
-// A shot disappears when its next cell would put its footprint on a wall or squeeze it
-// diagonally through a corner gap, and when it enters a cell of a target's footprint; then
-// `hits` gets that target's index. Walls are unharmed.
+// Spec 2.1, 2.5 and 2.10: moves every shot on by one cell along its line, one tick's flight.
+// A shot disappears when that cell would put its footprint on a wall or squeeze it diagonally
+// through a corner gap, and when it enters a cell of a target's footprint; then `hits` gets
+// that target's index. Walls are unharmed.
 export function moveShots(
   maze: Grid,
   shots: readonly Shot[],
@@ -56,22 +52,18 @@ export function moveShots(
   const flying: Shot[] = [];
   const hits: number[] = [];
   for (const shot of shots) {
-    let { x, y } = shot;
-    let gone = false;
-    for (let n = 0; n < SHOT_SPEED && !gone; n++) {
-      const next = wrap(maze, { x: x + shot.dx, y: y + shot.dy });
-      const blocked =
-        !fits(maze, next.x, next.y) ||
-        (shot.dx !== 0 &&
-          shot.dy !== 0 &&
-          !fits(maze, next.x, y) &&
-          !fits(maze, x, next.y));
-      const hit = targets.findIndex((t) => overlaps(maze, next, t));
-      if (!blocked && hit >= 0) hits.push(hit);
-      gone = blocked || hit >= 0;
-      ({ x, y } = next);
-    }
-    if (!gone) flying.push({ ...shot, x, y });
+    const { x, y, dx, dy } = shot;
+    const next = wrap(maze, { x: x + dx, y: y + dy });
+    const blocked =
+      !fits(maze, next.x, next.y) ||
+      (dx !== 0 &&
+        dy !== 0 &&
+        !fits(maze, next.x, y) &&
+        !fits(maze, x, next.y));
+    if (blocked) continue;
+    const hit = targets.findIndex((t) => overlaps(maze, next, t));
+    if (hit >= 0) hits.push(hit);
+    else flying.push({ ...shot, ...next });
   }
   return { shots: flying, hits };
 }
