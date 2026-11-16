@@ -2,7 +2,7 @@
 
 A single-player browser remake of Snipes, the 1982 text-mode maze shooter. Original code and graphics; only the gameplay is recreated. See [SPEC.md](SPEC.md) for the full specification.
 
-> Status: M0 (skeleton) and M1 (maze and movement, at the sizes of spec 2.10 since WP 07b) are done. The game shows a random 256 × 240 maze of 15 × 11 corridors that scrolls with the player, a 4 × 4 spacecraft that moves with the arrow keys (Space = faster). M2 (shooting) is next, starting with WP 08.
+> Status: M0 (skeleton), M1 (maze and movement) and M2 (shooting) are done. The game shows a random 256 × 240 maze of 15 × 11 corridors that scrolls with the player, a 4 × 4 spacecraft that moves with the arrow keys (Space = faster) and fires with W A S D in 8 directions, diagonally with two keys held; shots fly to the first wall and disappear. M3 (hives and snipes) is next, starting with WP 09.
 
 **Live:** https://snipes-web.martin-jo-strand.workers.dev
 
