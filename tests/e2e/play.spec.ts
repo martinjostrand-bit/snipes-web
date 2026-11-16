@@ -29,6 +29,14 @@ interface Probe {
   /** Reads the canvas, keeps the pixels under `name` and returns their hash. */
   snap(name: string): Shot;
   hashNow(): number;
+  /** Hash of the canvas below the HUD row of height `top`, leaving out the given rectangle. */
+  hashMazeOutside(
+    top: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): number;
   /** How many of the n x n equal blocks of the canvas hold more than one colour. */
   blocksWithDetail(n: number): number;
   /** Finds the shift along `axis` that best maps the shot `before` onto the shot `after`. */
@@ -63,6 +71,20 @@ async function installProbe(page: Page): Promise<void> {
       },
       hashNow() {
         return hash(read());
+      },
+      hashMazeOutside(top, x, y, width, height) {
+        const image = read();
+        const pixels = new Uint32Array(image.data.buffer);
+        let h = 2166136261;
+        for (let py = top; py < image.height; py++) {
+          for (let px = 0; px < image.width; px++) {
+            if (px >= x && px < x + width && py >= y && py < y + height) {
+              continue;
+            }
+            h = Math.imul(h ^ pixels[py * image.width + px], 16777619);
+          }
+        }
+        return h >>> 0;
       },
       blocksWithDetail(n) {
         const image = read();
@@ -415,5 +437,70 @@ test.describe("2.1 Maze and 2.8 Controls: an arrow key moves the player", () => 
       return;
     }
     throw new Error(`No arrow key moved the player: ${blocked.join(", ")}`);
+  });
+});
+
+// Spec 2.5, 2.8, 2.10, 3 and 9.1 WP 08: W A S D fire. The player starts in the middle of a
+// block with open cells on every side (2.10), so a shot fired straight from the start has
+// room to appear. The shot is drawn outside the player's footprint, flies to the wall and
+// disappears; the wall is unharmed and the player does not move, so the view does not scroll.
+// The player's own cells are left out of the comparison, because its guns turn to the last
+// firing direction (3).
+const PLAYER_BOX = {
+  x: ((80 - 4) / 2) * CELL_PX,
+  y: ((44 - 4) / 2 + 1) * CELL_PX,
+  width: 4 * CELL_PX,
+  height: 4 * CELL_PX,
+};
+
+function mazeHash(page: Page): Promise<number> {
+  return page.evaluate(
+    (box) =>
+      (window as unknown as ProbeWindow).probe.hashMazeOutside(
+        8,
+        box.x,
+        box.y,
+        box.width,
+        box.height,
+      ),
+    PLAYER_BOX,
+  );
+}
+
+test.describe("2.5 Bullets and 2.8 Controls: a fire key shoots", () => {
+  test("each of W A S D draws a shot that flies off, without moving the player", async ({
+    page,
+  }) => {
+    const errors = await openGame(page);
+
+    for (const key of ["KeyD", "KeyA", "KeyW", "KeyS"]) {
+      await settle(page, "before");
+      const before = await mazeHash(page);
+      await page.keyboard.down(key);
+      const drawn = await page
+        .waitForFunction(
+          ({ box, hash }) =>
+            (window as unknown as ProbeWindow).probe.hashMazeOutside(
+              8,
+              box.x,
+              box.y,
+              box.width,
+              box.height,
+            ) !== hash,
+          { box: PLAYER_BOX, hash: before },
+          { polling: "raf", timeout: 1500 },
+        )
+        .then(
+          () => true,
+          () => false,
+        );
+      await page.keyboard.up(key);
+      expect(drawn, `${key} drew no shot outside the player`).toBe(true);
+
+      // The shot has hit the wall and gone; the maze is drawn exactly as before.
+      await settle(page, "after");
+      expect(await mazeHash(page), `${key}: the view changed`).toBe(before);
+    }
+    expect(errors).toEqual([]);
   });
 });

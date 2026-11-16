@@ -160,3 +160,120 @@ describe("2.2 Player: movement and shooting are independent", () => {
     },
   );
 });
+
+// Spec 2.5, 2.8 and 9.1 WP 08: W A S D fire, diagonally with two keys held, as `fireX` and
+// `fireY` in the InputState (up is fireY = -1). Opposite fire keys cancel like the arrow keys.
+describe("2.8 Controls: W A S D fire in 8 directions", () => {
+  it.each([
+    ["KeyW", 0, -1],
+    ["KeyS", 0, 1],
+    ["KeyA", -1, 0],
+    ["KeyD", 1, 0],
+  ])("fires with %s alone, without moving", (key, fireX, fireY) => {
+    expect(inputFromKeys(held(key))).toEqual({ ...NO_INPUT, fireX, fireY });
+  });
+
+  it.each([
+    ["KeyW", "KeyA", -1, -1],
+    ["KeyW", "KeyD", 1, -1],
+    ["KeyS", "KeyA", -1, 1],
+    ["KeyS", "KeyD", 1, 1],
+  ])(
+    "fires diagonally with %s and %s held together",
+    (vertical, horizontal, fireX, fireY) => {
+      const expected = { ...NO_INPUT, fireX, fireY };
+      expect(inputFromKeys(held(vertical, horizontal))).toEqual(expected);
+      expect(inputFromKeys(held(horizontal, vertical))).toEqual(expected);
+    },
+  );
+
+  it("gives no fire direction when no key is held", () => {
+    expect(inputFromKeys(held())).toMatchObject({ fireX: 0, fireY: 0 });
+    expect(NO_INPUT).toMatchObject({ fireX: 0, fireY: 0 });
+  });
+
+  it.each(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"])(
+    "%s does not fire",
+    (key) => {
+      expect(inputFromKeys(held(key))).toMatchObject({ fireX: 0, fireY: 0 });
+    },
+  );
+
+  it.each(["KeyP", "Escape", "KeyR", "KeyM", "Enter", "KeyX", "KeyQ", "KeyE"])(
+    "ignores %s for firing",
+    (key) => {
+      expect(inputFromKeys(held(key))).toEqual(NO_INPUT);
+    },
+  );
+});
+
+describe("2.8 Controls: opposite fire keys cancel", () => {
+  it("does not fire with A and D held together", () => {
+    expect(inputFromKeys(held("KeyA", "KeyD"))).toEqual(NO_INPUT);
+    expect(inputFromKeys(held("KeyD", "KeyA"))).toEqual(NO_INPUT);
+  });
+
+  it("does not fire with W and S held together", () => {
+    expect(inputFromKeys(held("KeyW", "KeyS"))).toEqual(NO_INPUT);
+    expect(inputFromKeys(held("KeyS", "KeyW"))).toEqual(NO_INPUT);
+  });
+
+  it.each([
+    ["KeyW", -1],
+    ["KeyS", 1],
+  ])(
+    "keeps only the vertical direction with A, D and %s held",
+    (vertical, fireY) => {
+      const expected = { ...NO_INPUT, fireX: 0, fireY };
+      expect(inputFromKeys(held("KeyA", "KeyD", vertical))).toEqual(expected);
+      expect(inputFromKeys(held(vertical, "KeyD", "KeyA"))).toEqual(expected);
+    },
+  );
+
+  it.each([
+    ["KeyA", -1],
+    ["KeyD", 1],
+  ])(
+    "keeps only the horizontal direction with W, S and %s held",
+    (horizontal, fireX) => {
+      const expected = { ...NO_INPUT, fireX, fireY: 0 };
+      expect(inputFromKeys(held("KeyW", "KeyS", horizontal))).toEqual(expected);
+      expect(inputFromKeys(held(horizontal, "KeyS", "KeyW"))).toEqual(expected);
+    },
+  );
+
+  it("does nothing with all four fire keys held", () => {
+    expect(inputFromKeys(held("KeyW", "KeyA", "KeyS", "KeyD"))).toEqual(
+      NO_INPUT,
+    );
+  });
+});
+
+describe("2.2 Player / 2.8 Controls: moving and firing at the same time", () => {
+  it("moves one way and fires another with both groups held", () => {
+    expect(inputFromKeys(held("ArrowRight", "KeyW"))).toEqual({
+      ...NO_INPUT,
+      moveX: 1,
+      fireY: -1,
+    });
+    expect(
+      inputFromKeys(held("ArrowUp", "ArrowLeft", "Space", "KeyS", "KeyD")),
+    ).toEqual({
+      ...NO_INPUT,
+      moveX: -1,
+      moveY: -1,
+      fast: true,
+      fireX: 1,
+      fireY: 1,
+    });
+  });
+
+  it("cancels an axis in one group without touching the other group", () => {
+    expect(
+      inputFromKeys(held("ArrowLeft", "ArrowRight", "KeyA", "KeyW")),
+    ).toEqual({ ...NO_INPUT, fireX: -1, fireY: -1 });
+    expect(
+      inputFromKeys(held("ArrowDown", "KeyA", "KeyD", "KeyW", "KeyS")),
+    ).toEqual({ ...NO_INPUT, moveY: 1 });
+  });
+});
