@@ -4,8 +4,9 @@ Each release covers one milestone (spec 5.5 and 9). Versions follow semantic ver
 
 ## 0.3.0 – 2026-11-16 – M2 Shooting
 
-- W A S D fire in 8 directions, diagonally with two keys held, independent of movement; opposite keys cancel each other. Holding a fire key keeps firing. The player's guns point in the last firing direction.
-- A shot is 2 × 2 cells and appears just outside the player in the firing direction. It flies in a straight line, faster than the player, until the first wall, and wraps at the maze edges. A diagonal shot stops at a corner gap. Walls are unharmed.
+- W A S D fire in 8 directions, diagonally with two keys held, independent of movement; opposite keys cancel each other. Holding a fire key fires every 13 ticks (about 4.6 shots a second); tapping cannot fire faster, and nothing is fired while Space is held. The player's guns point in the last firing direction.
+- A shot is 2 × 2 cells and appears just outside the player in the firing direction. It flies in a straight line at 60 cells a second, twice as fast as the player with Space, until the first wall, and wraps at the maze edges. A diagonal shot stops at a corner gap. Walls are unharmed.
+- Game logic now runs at 60 ticks per second, in step with a 60 Hz screen. The player steps every 3 ticks (20 cells a second), or every 2 while Space is held (30 cells a second).
 
 ## 0.2.0 – 2026-11-16 – M1 Maze and movement
 

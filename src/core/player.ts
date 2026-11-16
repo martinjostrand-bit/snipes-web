@@ -2,7 +2,7 @@ import { cellAt, wrap, type Grid } from "./grid";
 import type { InputState } from "./state";
 
 // Spec 2.2: ticks between two steps of the player, at normal speed and with Space held.
-const STEP_TICKS = 4;
+const STEP_TICKS = 3;
 const FAST_STEP_TICKS = 2;
 
 // Spec 2.10: the player covers PLAYER_SIZE x PLAYER_SIZE cells; its position is the top-left one.

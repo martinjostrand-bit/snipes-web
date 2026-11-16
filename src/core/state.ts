@@ -10,7 +10,7 @@ const START_X = WALL_X + 1 + 5;
 const START_Y = WALL_Y + 1 + 3;
 
 // Spec 2.5: ticks from one shot to the next while a fire key is held.
-const FIRE_TICKS = 4;
+const FIRE_TICKS = 13;
 
 // Spec 2.2 and 2.8: the keys held this tick. y grows downwards, so up is moveY = -1 and
 // fireY = -1.
@@ -57,8 +57,9 @@ export function createGame(seed: number): GameState {
 }
 
 // Spec 2.2 and 2.5: the shots in flight move on, the player moves, and while a fire key is
-// held a new shot appears next to the player, independent of the way it moves. A new shot
-// stays where it appears until the next tick. The guns turn to a held fire direction.
+// held a new shot appears next to the player, independent of the way it moves, except while
+// Space is held. A new shot stays where it appears until the next tick. The guns turn to a
+// held fire direction.
 export function step(state: GameState, input: InputState): GameState {
   const { maze } = state;
   const aim =
@@ -68,7 +69,7 @@ export function step(state: GameState, input: InputState): GameState {
   const player = movePlayer(maze, state.player, input);
   const { shots } = moveShots(maze, state.shots, []);
   const shot =
-    state.reload > 0
+    state.reload > 0 || input.fast
       ? undefined
       : fireShot(maze, player, input.fireX, input.fireY);
   if (shot === undefined) {
