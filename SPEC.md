@@ -1,11 +1,12 @@
 # Snipes Web — Specification
 
-Nov 15, 2026 · @Martin · Draft v0.5
+Nov 16, 2026 · @Martin · Draft v0.6
 
 - v0.2: sections 5 and 7 filled in from the HundAlder project's GitHub and publishing setup.
 - v0.3: CI, build and quality principles adopted from the MissingFiles project (5.2–5.7, 6.3–6.4, 9, 11).
 - v0.4: movement against walls, corner gaps, opposite keys and touching a deadly wall (2.1, 2.2, 2.8, 6.2, 9, 10, 11).
 - v0.5: relative sizes of entities, corridors and walls, on a grid of square character cells; new WP 07b (2.10, 3, 6.2, 6.3, 9, 9.1, 10, 11).
+- v0.6: a diagonal shot at a corner gap stops (2.10, 10, 11).
 
 ## 1. Overview and goals
 
@@ -172,6 +173,7 @@ Source: the reverse-engineered Snipes source (section 10), `Snipes.h` and its sp
 - The rules in 2.1, 2.2 and 6.2 that speak of "a cell" apply to the **whole footprint**. A position is open when every cell of the footprint is open, with wrap-around. A step moves the footprint one cell.
 - **Reachability (2.1):** every position where the player's footprint fits can be reached from every other by straight steps.
 - **Corner gaps and slides (2.1, 2.2):** a diagonal step needs the footprint at the diagonal position to be open and the footprint at at least one of the two straight positions to be open. Otherwise the slide order in 2.2 applies, each step tested with the whole footprint.
+- **Shots at corner gaps (2.1, 2.5):** a diagonal shot uses the same test with its 2 × 2 footprint. If the diagonal position is open but both straight positions are blocked, the shot stops there as if it hit a wall: it disappears and the wall is unharmed.
 - **Touching a wall (2.2):** a held direction would put a footprint cell on a wall cell.
 - Ghosts' footprints may overlap walls.
 - **Start and respawn (2.2):** the player starts and respawns as near the middle of a block as it can, leaning up-left: 5 cells from the left wall and 3 from the top wall (6 and 4 on the other sides).
@@ -529,7 +531,7 @@ A package that grows beyond its size is split rather than stretched.
 - [x] ~~Version format: keep semver or match HundAlder's `XX.YY.ZZ`?~~ Decided (Nov 8): keep plain semver on the title screen (5.5).
 - [x] ~~Should the Worker name wait for the public release name?~~ Decided (Nov 8): use `snipes-web` for now. A rename after the release-name decision changes the `workers.dev` URL.
 - [ ] Confirm original rules marked _(verify)_: whether ghosts shoot, whether bounced shots can hit the player, what follows a cleared level, the diagonal slide order, corner gaps, opposite keys cancelling, and what counts as touching a deadly wall. Hive 20 hits and point values come from Martin's description; no source found yet. Reference: the reverse-engineered [Snipes source on GitHub](https://github.com/Davidebyzero/Snipes), used for behaviour only, never copied.
-- [ ] Corner gaps (2.1) for bullets and snipes, before WP 08, WP 10 and WP 16: does a diagonal bullet at a corner gap stop; which way does a bouncy shot bounce; which wall, if any, does a destroyable-walls shot remove; does a corner gap block a snipe's line of sight? Generated mazes contain no corner gaps, so tests need hand-built grids.
+- [ ] Corner gaps (2.1) for bullets and snipes, before WP 10 and WP 16 (a diagonal shot at a corner gap stops, decided Nov 16, 2.10): which way does a bouncy shot bounce; which wall, if any, does a destroyable-walls shot remove; does a corner gap block a snipe's line of sight? Generated mazes contain no corner gaps, so tests need hand-built grids.
 - [ ] Deadly walls (2.2, 2.6), before WP 17: is touching checked every tick a key is held or only when the next step is due; should a diagonal held in a one-cell corridor kill (its diagonal cell is a wall); confirm a diagonal into a corner gap is safe; after a respawn, is movement ignored until all arrow keys are released? Also add the matching tests to the WP 08, 10, 16 and 17 rows.
 - [x] ~~Exact maze size and screen view size~~ Decided (Nov 15): 256 × 240 cells, twice the original's 128 × 120 (2.10); the view is 80 × 44 cells plus the HUD row at 8 px per cell, twice the original's 40 × 22 (3).
 - [x] ~~Sizes (2.10): snipe orientation, ghost and hive size, touching an enemy, where shots start, gun direction, wall segment size~~ Decided (Nov 15), see 2.10 and 3. Checked against the reverse-engineered source: everything is twice the original's size, except walls.
@@ -554,6 +556,7 @@ Decisions are recorded here with their date when they are made, as in MissingFil
 | 2026-11-09 | Our own movement rules, marked _(verify)_ against the original: a diagonal into a wall slides (horizontal first); no corner gaps for the player, snipes and bullets; opposite movement and fire keys cancel; touching a deadly wall means trying to step into it, with no slide                                                                                                                         | 2.1, 2.2, 2.8, 6.2, 9.1 |
 | 2026-11-15 | Entity sizes are physical, not only drawn: a grid of square character cells at twice the original's scale (walls stay 1 thick), 15 × 11 corridors, a 256 × 240 maze, a 4 × 4 player that moves one cell per step. M1 is reworked in a new WP 07b before WP 08                                                                                                                                           | 2.10, 3, 9.1            |
 | 2026-11-15 | Size details: snipe 4 × 2 and always horizontal, ghost and shots 2 × 2, hive 4 × 4; touching means overlapping footprints; the player starts leaning up-left in a corridor; shots start just outside the footprint; guns show the last firing direction; a destroyable wall segment is a whole run between crossings; view 80 × 44 cells + HUD at 8 px; the 07b test-writer commit may replace M1 tests | 2.10, 3, 6.3, 10        |
+| 2026-11-16 | A diagonal shot at a corner gap stops, like a shot that hits a wall                                                                                                                                                                                                                                                                                                                                     | 2.10, 10                |
 
 ## Sources
 
