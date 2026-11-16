@@ -16,7 +16,7 @@ function play(seed: number, inputs: readonly InputState[]): GameState {
   return state;
 }
 
-const TICKS = 30 * 60; // one minute at 30 ticks/s
+const TICKS = 60 * 60; // one minute at 60 ticks/s (4.3)
 const idleLog: InputState[] = new Array<InputState>(TICKS).fill(NO_INPUT);
 
 describe("6.2 Determinism", () => {

@@ -27,7 +27,7 @@ type Axis = InputState["moveX"];
 
 const SIZE = 4; // the player's footprint is SIZE x SIZE cells (2.10)
 const SEEDS = Array.from({ length: 20 }, (_, i) => i * 7919 + 1);
-const TICKS = 30 * 60; // one minute at 30 ticks/s
+const TICKS = 60 * 60; // one minute at 60 ticks/s (4.3)
 const AXES: Axis[] = [-1, 0, 1];
 const STRAIGHT: [Axis, Axis][] = [
   [0, -1],
