@@ -46,5 +46,6 @@ Commit exactly what was verified. Any further edit needs a new verification roun
 
 1. Commit with a short, descriptive subject ending in `(WP $wp)`, and the trailer `Verified: PASS` before the attribution trailers.
 2. Push the branch and open a PR to `main`. The body says what the package does and includes the verdict table.
-3. Run `/ci-status`.
-4. Report the verdict, the PR URL and the CI result. Martin reviews the preview, merges and approves the deploy (spec 9.2 steps 4–5).
+3. Turn on auto-merge: `gh pr merge --auto --merge`. GitHub merges the PR when its required checks pass (spec 9.2 step 4).
+4. Run `/ci-status`.
+5. Report the verdict, the PR URL and the CI result. The change goes live with the next release (spec 9.2 step 5).

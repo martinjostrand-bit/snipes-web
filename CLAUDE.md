@@ -38,8 +38,8 @@ Writing tests, implementing and verifying are done by different agents (`test-wr
 1. `npm run check`, `npm test`, `npm run build` and `npm run test:e2e` pass, with no warnings.
 2. The `verifier` verdict for that exact change is PASS. If the change was edited after the verdict, verify it again.
 3. The commit subject ends with `(WP NN)` and the message has the trailer `Verified: PASS`, before any attribution trailers. Never write `Verified: PASS` without a PASS verdict for that exact change.
-4. Push the branch and open a PR to `main` with the GitHub account `martinjostrand-bit`. `main` is protected, so never push to it directly. Check CI with `/ci-status`.
-5. The PR's required checks are green, and Martin has merged it and approved the production deploy.
+4. Push the branch, open a PR to `main` with the GitHub account `martinjostrand-bit`, and turn on auto-merge with `gh pr merge --auto --merge`. `main` is protected, so never push to it directly. Check CI with `/ci-status`.
+5. The PR's required checks are green and GitHub has merged it. Production only changes at a release (`/release`), which Martin approves.
 
 ## Rules against over-engineering (spec 8)
 

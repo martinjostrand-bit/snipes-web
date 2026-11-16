@@ -1,12 +1,14 @@
 name: Build, check & deploy
 
 # Spec 5.4 and 7. Modelled on HundAlder's pipeline: checks on every PR and push,
-# a preview version per PR, and a production deploy that waits for approval.
+# a preview version per PR, and a production deploy on release tags that waits
+# for approval (spec 5.5).
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -70,11 +72,13 @@ jobs:
 
   preview:
     name: preview
+    # PRs get a preview; pushes to main get the staging preview (spec 6.3 rule 5).
     # Dependabot and fork PRs have no access to the Cloudflare secrets.
     if: >-
-      github.event_name == 'pull_request' &&
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
       github.actor != 'dependabot[bot]' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository)
     needs: checks
     runs-on: ubuntu-latest
     permissions:
@@ -109,8 +113,15 @@ jobs:
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
+      - name: Write staging preview URL to the run summary
+        if: github.event_name == 'push' && steps.preview-url.outputs.url != ''
+        env:
+          URL: ${{ steps.preview-url.outputs.url }}
+        run: |
+          echo "Staging preview of main: $URL" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Comment preview URL on the PR
-        if: steps.preview-url.outputs.url != ''
+        if: github.event_name == 'pull_request' && steps.preview-url.outputs.url != ''
         uses: actions/github-script@v9
         env:
           URL: ${{ steps.preview-url.outputs.url }}
@@ -125,7 +136,7 @@ jobs:
 
   deploy:
     name: deploy
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: checks
     runs-on: ubuntu-latest
     # Required reviewer martinjostrand-bit, no admin bypass (spec 7).
@@ -134,6 +145,12 @@ jobs:
       url: ${{ env.PRODUCTION_URL }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Spec 5.5: a release is a commit on main.
+      - name: Check that the tagged commit is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
       - uses: actions/download-artifact@v8
         with:

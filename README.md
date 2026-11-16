@@ -30,7 +30,8 @@ Install the Playwright browsers once with `npx playwright install`.
 The site is an assets-only Cloudflare Worker (`wrangler.jsonc`), deployed by GitHub Actions only. Cloudflare's own Git integration is off.
 
 - **Pull request to `main`:** `checks` runs audit, check, tests, build, e2e and a Wrangler dry run. CodeQL scans the code. `preview` uploads a preview version and comments its URL on the PR. `checks` and CodeQL must pass before merging.
-- **Merge to `main`:** `checks` runs again, then `deploy` waits for approval, deploys the tested `dist/` and smoke-tests the production URL.
+- **Merge to `main`:** verified PRs merge automatically once `checks` and CodeQL are green. On `main`, `checks` runs again and `preview` uploads a staging preview, whose URL is in the run summary. Nothing is deployed.
+- **Release tag `v*`** (pushed by `/release`, once per milestone): `checks` runs, then `deploy` waits for approval, deploys the tested `dist/` and smoke-tests the production URL.
 
 To approve a production deploy: **Actions** → the waiting run → **Review deployments** → tick **production** → **Approve and deploy**. There is no admin bypass.
 
