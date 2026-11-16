@@ -1,12 +1,13 @@
 # Snipes Web — Specification
 
-Nov 16, 2026 · @Martin · Draft v0.6
+Nov 16, 2026 · @Martin · Draft v0.7
 
 - v0.2: sections 5 and 7 filled in from the HundAlder project's GitHub and publishing setup.
 - v0.3: CI, build and quality principles adopted from the MissingFiles project (5.2–5.7, 6.3–6.4, 9, 11).
 - v0.4: movement against walls, corner gaps, opposite keys and touching a deadly wall (2.1, 2.2, 2.8, 6.2, 9, 10, 11).
 - v0.5: relative sizes of entities, corridors and walls, on a grid of square character cells; new WP 07b (2.10, 3, 6.2, 6.3, 9, 9.1, 10, 11).
 - v0.6: a diagonal shot at a corner gap stops (2.10, 10, 11).
+- v0.7: PRs merge automatically once verified and green; production deploys only on a release tag, one release per milestone, with a staging preview of `main` (5.1, 5.4, 5.5, 5.6, 5.7, 6.3, 7, 9, 9.1, 9.2, 11).
 
 ## 1. Overview and goals
 
@@ -243,7 +244,7 @@ One repository on Martin's existing GitHub account, with a small set of standard
 
 - Repo: `martinjostrand-bit/snipes-web`, on the same GitHub account as HundAlder (`martinjostrand-bit/hundalder-kalkylator`).
 - **Public**, like HundAlder. On GitHub's free plan, branch protection and the required-reviewer gate on the `production` environment (section 7) only work on public repositories.
-- Default branch `main`, protected: changes land via pull request with green CI. (HundAlder uses `master` without branch protection; this project uses `main` and protects it.)
+- Default branch `main`, protected: changes land via pull request with green CI. The repository setting **Allow auto-merge** is on, so a verified PR merges itself once its checks pass (9.2). (HundAlder uses `master` without branch protection; this project uses `main` and protects it.)
 - Commits are authored as `Martin Strand <martin.jo.strand@pm.me>`, the same git identity as HundAlder. `gh` is logged in as `martinjostrand-bit`.
 - Files at the root: `README.md` (how to run, build, test, deploy, approve a production deploy), `SPEC.md` (this document), `CLAUDE.md` (5.7), `.claude/` (5.7), `LICENSE`, `.editorconfig`, `.gitattributes`, `.gitignore`, `.nvmrc`, `wrangler.jsonc` (section 7).
 - Node 24 LTS pinned in `.nvmrc`, `package.json` `engines` and the CI workflow. The pinned Wrangler needs Node ≥ 22 (HundAlder's CI broke on Node 20 for this reason); Node 22, which HundAlder uses, reaches end of life in April 2027. One package manager (npm), lockfile committed.
@@ -276,13 +277,13 @@ No other tools unless a real problem calls for one. No monorepo tooling, no Dock
 
 GitHub Actions, two workflows.
 
-**`.github/workflows/deploy.yml`** is modelled on HundAlder's. It runs on every pull request to `main`, every push to `main`, and on demand (`workflow_dispatch`). It has three jobs:
+**`.github/workflows/deploy.yml`** is modelled on HundAlder's. It runs on every pull request to `main`, every push to `main`, every pushed release tag `v*`, and on demand (`workflow_dispatch`). It has three jobs:
 
-| Job       | Runs on                               | Steps                                                                                                                                                                                                                                                           |
-| --------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `checks`  | PRs and pushes                        | `npm ci` → `npm audit --audit-level=high` → `check` → `test` (with coverage) → `build` → `test:e2e` → `wrangler deploy --dry-run` → upload `dist/` as a workflow artifact. Coverage and the Playwright report are uploaded as artifacts even when a step fails. |
-| `preview` | PRs only, after `checks`              | Download `dist/` → `wrangler versions upload` → comment the preview URL on the PR                                                                                                                                                                               |
-| `deploy`  | Pushes to `main` only, after `checks` | Download `dist/` → `wrangler deploy`; runs in the `production` environment, so it waits for Martin's approval                                                                                                                                                   |
+| Job       | Runs on                                  | Steps                                                                                                                                                                                                                                                           |
+| --------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checks`  | Every run                                | `npm ci` → `npm audit --audit-level=high` → `check` → `test` (with coverage) → `build` → `test:e2e` → `wrangler deploy --dry-run` → upload `dist/` as a workflow artifact. Coverage and the Playwright report are uploaded as artifacts even when a step fails. |
+| `preview` | PRs and pushes to `main`, after `checks` | Download `dist/` → `wrangler versions upload` → comment the preview URL on the PR, or for `main` write it to the run summary as the staging preview                                                                                                             |
+| `deploy`  | Release tags `v*` only, after `checks`   | Download `dist/` → `wrangler deploy`; runs in the `production` environment, so it waits for Martin's approval                                                                                                                                                   |
 
 **`.github/workflows/codeql.yml`** is modelled on MissingFiles'. It runs CodeQL with language `javascript-typescript`, build mode `none` and the `security-and-quality` queries. It runs on every PR, every push to `main`, and weekly on Monday 04:00 UTC, so new queries also check code that has not changed.
 
@@ -298,8 +299,9 @@ GitHub Actions, two workflows.
 
 - Semantic version `MAJOR.MINOR.PATCH`, shown on the title screen.
 - Defined in one place, `package.json` `version`, and changed by hand. The build injects it into the page. Nothing else holds a copy.
+- There is one release per milestone. The last work package of a milestone bumps the MINOR version (M1 → 0.2.0, … M4 → 0.5.0; M5 → 1.0.0) and adds the version's section to `CHANGELOG.md`.
 - Between two releases, each of MAJOR, MINOR and PATCH goes up at most once. Changes that only affect documentation, tests or CI do not change the version.
-- A release is a commit on `main` with a passing CI run and an approved production deploy. It is tagged `vX.Y.Z` and published as a GitHub Release, with its section of `CHANGELOG.md` as the notes, by `/release` (5.7).
+- A release is a commit on `main` with a passing CI run. `/release` (5.7) tags it `vX.Y.Z`. The tag runs `checks` and the production deploy, which waits for Martin's approval (7). Once the deploy succeeds, `/release` publishes a GitHub Release with the version's section of `CHANGELOG.md` as the notes. Merges to `main` between releases are not deployed.
 - Commit messages in plain imperative English with a short, descriptive subject; Conventional Commits optional.
 
 ### 5.6 Build and quality rules
@@ -313,7 +315,7 @@ These are adapted from the MissingFiles project (a .NET app on the same GitHub a
 5. **Build once, ship what was tested.** `preview` and `deploy` publish the `dist/` artifact from `checks` (5.4).
 6. **Never commit build output.** `.gitignore` covers `node_modules/`, `dist/`, `coverage/`, `test-results/`, `playwright-report/` and `.wrangler/`.
 7. **One line-ending policy.** All files use LF, enforced by `.gitattributes` (`* text=auto eol=lf`), `.editorconfig` (`end_of_line = lf`) and Prettier. MissingFiles uses CRLF because it is Windows-only. A web project uses LF so that the format check gives the same result on every OS and in CI.
-8. **Security in the pipeline and in the repository.** The pipeline runs CodeQL, `npm audit` and Dependabot. Secret scanning and push protection are GitHub repository settings, not pipeline steps. `/release` checks that both are on before it publishes (5.7).
+8. **Security in the pipeline and in the repository.** The pipeline runs CodeQL, `npm audit` and Dependabot. Secret scanning and push protection are GitHub repository settings, not pipeline steps. `/release` checks that both are on before it tags a release (5.7).
 9. **Slow tests move, they don't disappear.** A test that no longer fits the time budgets in 6.1 moves to a scheduled workflow, like MissingFiles' nightly performance test. It is not deleted or skipped.
 10. **The spec is the source of truth.** Tests name the spec section they check, for example `describe('2.3 Hives', …)`. When code and spec disagree, raise it with Martin instead of choosing silently. If the spec is wrong, it is changed first, in its own PR.
 
@@ -321,13 +323,13 @@ These are adapted from the MissingFiles project (a .NET app on the same GitHub a
 
 Claude Code is the development tool. Its configuration is in the repository, so every session works the same way. This follows MissingFiles' DEV-01 to DEV-07, adapted to pull requests.
 
-| File                                   | Content                                                                                                                                                                                                                                      |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLAUDE.md`                            | Commands, conventions, the roles below, the definition of done, and the rules in section 8. It refers to `SPEC.md` instead of repeating it.                                                                                                  |
-| `.claude/settings.json`                | Permissions. `npm run check`, `npm test`, `npm run build`, `npm run test:e2e` and read-only `git` and `gh` commands run without a prompt. `git push --force` and `git reset --hard` are denied. `gh api` prompts, because it can also write. |
-| `.claude/agents/`                      | The agents below                                                                                                                                                                                                                             |
-| `.claude/skills/`                      | The skills below                                                                                                                                                                                                                             |
-| `.claude/hooks/verifier-bash-guard.js` | `PreToolUse` hook. Inside the `verifier`, it allows only read-only `git` commands, simple text filters and the four check commands exactly as written, and blocks everything else.                                                           |
+| File                                   | Content                                                                                                                                                                                                                                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLAUDE.md`                            | Commands, conventions, the roles below, the definition of done, and the rules in section 8. It refers to `SPEC.md` instead of repeating it.                                                                                                                                             |
+| `.claude/settings.json`                | Permissions. `npm run check`, `npm test`, `npm run build`, `npm run test:e2e` read-only `git` and `gh` commands, and `gh pr merge --auto --merge` (9.2 step 3) run without a prompt. `git push --force` and `git reset --hard` are denied. `gh api` prompts, because it can also write. |
+| `.claude/agents/`                      | The agents below                                                                                                                                                                                                                                                                        |
+| `.claude/skills/`                      | The skills below                                                                                                                                                                                                                                                                        |
+| `.claude/hooks/verifier-bash-guard.js` | `PreToolUse` hook. Inside the `verifier`, it allows only read-only `git` commands, simple text filters and the four check commands exactly as written, and blocks everything else.                                                                                                      |
 
 **Agents**, each with its effort level set in its definition:
 
@@ -351,7 +353,7 @@ Claude Code is the development tool. Its configuration is in the repository, so 
 
 1. `npm run check`, `npm test`, `npm run build` and `npm run test:e2e` pass locally, with no warnings.
 2. The `verifier` verdict for that exact change is PASS. The commit carries the trailer `Verified: PASS`. A trailer, not the last line, so attribution trailers can follow it. A change edited after the verdict is verified again. `Verified: PASS` is never written without a PASS verdict.
-3. The PR's required checks are green, and Martin has merged it and approved the production deploy (9.2).
+3. The PR's required checks are green and it is merged. `/implement-wp` turns on auto-merge after a PASS, so GitHub merges it when the checks pass (9.2). It goes live with the next release (5.5).
 
 MissingFiles commits verified changes straight to `main`. SnipesWeb keeps pull requests, because `main` is protected and every change gets a preview deploy (section 7).
 
@@ -393,7 +395,7 @@ Rendering and audio are not unit-tested; they are covered by e2e smoke tests and
    - The verifier cannot run `gh`. GitHub repository settings are outside its scope.
    - No agent verifies its own work. A fix is checked by a new `verifier` run.
 4. **CI is the referee.** Only a green CI run counts as passing, never "works on my machine".
-5. **Manual play check.** Before each release, Martin plays one full game and ticks the checklist in 6.4 in the release PR.
+5. **Manual play check.** Before each release, Martin plays one full game on the staging preview of the release commit (5.4) and confirms the checklist in 6.4 when `/release` asks.
 6. **Bugs get a test.** Every bug fix starts with a failing test (often a recorded seed + input log).
 
 ### 6.4 Play checklist (manual, per release)
@@ -422,13 +424,13 @@ The build output is static files in `dist/`. They are published to Cloudflare Wo
 
 - **Production URL:** `https://snipes-web.martin-jo-strand.workers.dev`, on the same `workers.dev` subdomain as HundAlder (`https://hundalder-kalkylator.martin-jo-strand.workers.dev`). A custom domain is out of scope for version 1.
 - **Deploys only through GitHub Actions.** Cloudflare's own "Connect to Git" integration stays off for this Worker, as for HundAlder, to avoid double deploys.
-- **Production gate:** every merge to `main` with green CI starts the `deploy` job, which waits in the GitHub environment `production`. The environment has `martinjostrand-bit` as required reviewer and admin bypass turned off, the same as HundAlder. To release: **Actions** → the waiting run → **Review deployments** → tick **production** → **Approve and deploy**.
-- **Previews:** each pull request gets a Worker preview version (`wrangler versions upload`). The bot comments its `*.martin-jo-strand.workers.dev` URL on the PR. Preview URLs must stay enabled on the Worker.
+- **Production gate:** only a pushed release tag `v*` starts the `deploy` job (5.5), which waits in the GitHub environment `production`. Merges to `main` run `checks` and upload a staging preview, but do not deploy. The `deploy` job fails unless the tagged commit is on `main`. The environment has `martinjostrand-bit` as required reviewer and admin bypass turned off, the same as HundAlder. To release: **Actions** → the waiting run → **Review deployments** → tick **production** → **Approve and deploy**.
+- **Previews:** each pull request and each push to `main` gets a Worker preview version (`wrangler versions upload`). For a PR the bot comments its `*.martin-jo-strand.workers.dev` URL on the PR; for `main` the URL is in the run summary (the staging preview, 6.3 rule 5). Preview URLs must stay enabled on the Worker.
 - **Secrets:** repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` under **Settings → Secrets and variables → Actions**, never in the repo. The account ID is the same as HundAlder's. Use a **new** API token for this repo, so that revoking one project's token does not break the other. Scope: _Workers Scripts:Edit_ and _Account Settings:Read_ only. HundAlder's token also has _Workers KV Storage:Edit_, which this project does not need.
-- **Rollback:** `wrangler rollback`, or Cloudflare dashboard → Worker → **Deployments** → roll back to an earlier version. Then fix forward through a normal PR.
+- **Rollback:** `wrangler rollback`, or Cloudflare dashboard → Worker → **Deployments** → roll back to an earlier version. Then fix forward through a normal PR and a new release (5.5).
 - **Privacy:** no analytics, cookies or tracking in the first version, so no cookie banner is needed.
 
-**One-time setup (part of WP 02):** create the GitHub repo, add the two secrets, create the `production` environment with the reviewer and no admin bypass, protect `main` with `checks` and CodeQL as required checks, turn on secret scanning and push protection, and run the first deploy. The first `wrangler deploy` creates the Worker.
+**One-time setup (part of WP 02):** create the GitHub repo, add the two secrets, create the `production` environment with the reviewer, no admin bypass and deployments allowed from tags `v*`, turn on **Allow auto-merge**, protect `main` with `checks` and CodeQL as required checks, turn on secret scanning and push protection, and run the first deploy. The first `wrangler deploy` creates the Worker.
 
 ## 8. Non-goals and scope guardrails
 
@@ -453,7 +455,7 @@ Anything not listed in sections 2–7 is out of scope until this spec is updated
 
 ## 9. Milestones and acceptance criteria
 
-Six milestones, each a small playable step that ends with green CI and a deploy.
+Six milestones, each a small playable step that ends with green CI and a release.
 
 1. **M0 – Skeleton.** Repo, tooling, CI, security scanning, deploy and Claude Code configuration in place; a blank canvas page is live.
    - `npm run check`, `npm test`, `npm run build` and `test:e2e` all run green in CI, and CodeQL runs on PRs.
@@ -475,9 +477,9 @@ Six milestones, each a small playable step that ends with green CI and a deploy.
    - E2E: high score survives a page reload.
 6. **M5 – Options and polish.** All four letter features (ghosts, bouncy diagonal shots, deadly walls, destroyable walls), the 1–9 table, skill-level entry on the title screen.
    - Unit: each option changes only the behaviour it names (tests with option on and off).
-   - Manual: Martin plays a full game on each option and signs off in the release PR.
+   - Manual: Martin plays a full game on each option and signs off when `/release` asks (6.3 rule 5).
 
-Version 1.0.0 is tagged after M5.
+Version 1.0.0 is released with `/release` after M5.
 
 ### 9.1 Work packages
 
@@ -503,7 +505,7 @@ The milestones split into 19 work packages. Each package is one branch, one pull
 | 15  | M5        | Letter → feature lookup table; ghosts (through walls, intercepting the player)                                                                                                                                                                                                                                                     | Each letter enables exactly its features; ghost's footprint may cover walls, snipe's may not                                                                                                                                      | 12         | M    |
 | 16  | M5        | Bouncy diagonal shots; destroyable walls                                                                                                                                                                                                                                                                                           | Only diagonal shots bounce; hit wall segment removed only when flag on                                                                                                                                                            | 15         | M    |
 | 17  | M5        | Deadly (electrified) walls                                                                                                                                                                                                                                                                                                         | Touching a wall (any footprint cell, 2.10) kills only when flag on                                                                                                                                                                | 15         | S    |
-| 18  | M5        | Tuning, replay/determinism check, manual play checklist, `CHANGELOG.md`, tag v1.0.0                                                                                                                                                                                                                                                | Determinism test over recorded games; full suite green                                                                                                                                                                            | all        | S    |
+| 18  | M5        | Tuning, replay/determinism check, manual play checklist, version 1.0.0 in `package.json` and its `CHANGELOG.md` section. After the merge, `/release` tags v1.0.0 (5.5)                                                                                                                                                             | Determinism test over recorded games; full suite green                                                                                                                                                                            | all        | S    |
 
 WP 14 can run alongside WP 15–17, and WP 16 alongside WP 17. Everything else follows the order above. WP 01–03 are set up by hand with Claude Code, because the loop below needs them to exist; from WP 04 on, every package runs through `/implement-wp`.
 
@@ -519,9 +521,9 @@ WP 14 can run alongside WP 15–17, and WP 16 alongside WP 17. Everything else f
 
    Nobody edits the code between rounds outside the `developer`.
 
-3. **Commit and PR.** Commit exactly what was verified, with the trailer `Verified: PASS`, push the branch and open the pull request. `/ci-status` reports the result: `checks` and CodeQL must be green, and the preview URL is commented on the PR.
-4. **Review.** Martin reads the diff and the verdict, plays the preview for a few minutes and merges.
-5. **Deploy.** Martin approves the waiting `deploy` job in GitHub Actions, and the change goes live.
+3. **Commit and PR.** Commit exactly what was verified, with the trailer `Verified: PASS`, push the branch, open the pull request and turn on auto-merge (`gh pr merge --auto --merge`). Any later change to the branch first turns auto-merge off (`gh pr merge --disable-auto`) and goes through a new verification round. `/ci-status` reports the result: `checks` and CodeQL must be green, and the preview URL is commented on the PR.
+4. **Merge.** GitHub merges the PR as soon as `checks` and CodeQL pass, usually before Martin has looked at it. Martin reviews merged changes before the next release; a bad change is reverted or fixed by a new PR before tagging.
+5. **Release.** The change goes live with the next release (5.5), which Martin approves once.
 
 A package that grows beyond its size is split rather than stretched.
 
@@ -542,21 +544,22 @@ A package that grows beyond its size is split rather than stretched.
 
 Decisions are recorded here with their date when they are made, as in MissingFiles.
 
-| Date       | Decision                                                                                                                                                                                                                                                                                                                                                                                                | Ref                     |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| 2026-11-08 | GitHub account `martinjostrand-bit`; public repo; protected `main` with pull requests                                                                                                                                                                                                                                                                                                                   | 5.1                     |
-| 2026-11-08 | Hosting on Cloudflare Workers via GitHub Actions, with PR previews and an approval gate for production, as in HundAlder                                                                                                                                                                                                                                                                                 | 5.4, 7                  |
-| 2026-11-08 | Plain semver, defined only in `package.json`                                                                                                                                                                                                                                                                                                                                                            | 5.5                     |
-| 2026-11-08 | Worker name `snipes-web` until the public release name is decided                                                                                                                                                                                                                                                                                                                                       | 7, 10                   |
-| 2026-11-08 | Build and quality rules adopted from MissingFiles: warnings are errors, enforced coverage, CodeQL and `npm audit`, least-privilege CI                                                                                                                                                                                                                                                                   | 5.4, 5.6                |
-| 2026-11-08 | Claude Code configuration in the repository; independent, read-only verifier; `Verified: PASS` commit trailer                                                                                                                                                                                                                                                                                           | 5.7, 6.3                |
-| 2026-11-08 | Unlike MissingFiles, verified changes go through pull requests, not straight to `main`                                                                                                                                                                                                                                                                                                                  | 5.7, 9.2                |
-| 2026-11-08 | LF line endings (MissingFiles uses CRLF because it is Windows-only)                                                                                                                                                                                                                                                                                                                                     | 5.6                     |
-| 2026-11-08 | Not adopted from MissingFiles: a CI build number in the version, a packaging script and release zip (the site is deployed, not downloaded), and a nightly performance workflow until a test needs one                                                                                                                                                                                                   | 5.5, 5.6                |
-| 2026-11-09 | Our own movement rules, marked _(verify)_ against the original: a diagonal into a wall slides (horizontal first); no corner gaps for the player, snipes and bullets; opposite movement and fire keys cancel; touching a deadly wall means trying to step into it, with no slide                                                                                                                         | 2.1, 2.2, 2.8, 6.2, 9.1 |
-| 2026-11-15 | Entity sizes are physical, not only drawn: a grid of square character cells at twice the original's scale (walls stay 1 thick), 15 × 11 corridors, a 256 × 240 maze, a 4 × 4 player that moves one cell per step. M1 is reworked in a new WP 07b before WP 08                                                                                                                                           | 2.10, 3, 9.1            |
-| 2026-11-15 | Size details: snipe 4 × 2 and always horizontal, ghost and shots 2 × 2, hive 4 × 4; touching means overlapping footprints; the player starts leaning up-left in a corridor; shots start just outside the footprint; guns show the last firing direction; a destroyable wall segment is a whole run between crossings; view 80 × 44 cells + HUD at 8 px; the 07b test-writer commit may replace M1 tests | 2.10, 3, 6.3, 10        |
-| 2026-11-16 | A diagonal shot at a corner gap stops, like a shot that hits a wall                                                                                                                                                                                                                                                                                                                                     | 2.10, 10                |
+| Date       | Decision                                                                                                                                                                                                                                                                                                                                                                                                | Ref                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| 2026-11-08 | GitHub account `martinjostrand-bit`; public repo; protected `main` with pull requests                                                                                                                                                                                                                                                                                                                   | 5.1                                              |
+| 2026-11-08 | Hosting on Cloudflare Workers via GitHub Actions, with PR previews and an approval gate for production, as in HundAlder                                                                                                                                                                                                                                                                                 | 5.4, 7                                           |
+| 2026-11-08 | Plain semver, defined only in `package.json`                                                                                                                                                                                                                                                                                                                                                            | 5.5                                              |
+| 2026-11-08 | Worker name `snipes-web` until the public release name is decided                                                                                                                                                                                                                                                                                                                                       | 7, 10                                            |
+| 2026-11-08 | Build and quality rules adopted from MissingFiles: warnings are errors, enforced coverage, CodeQL and `npm audit`, least-privilege CI                                                                                                                                                                                                                                                                   | 5.4, 5.6                                         |
+| 2026-11-08 | Claude Code configuration in the repository; independent, read-only verifier; `Verified: PASS` commit trailer                                                                                                                                                                                                                                                                                           | 5.7, 6.3                                         |
+| 2026-11-08 | Unlike MissingFiles, verified changes go through pull requests, not straight to `main`                                                                                                                                                                                                                                                                                                                  | 5.7, 9.2                                         |
+| 2026-11-08 | LF line endings (MissingFiles uses CRLF because it is Windows-only)                                                                                                                                                                                                                                                                                                                                     | 5.6                                              |
+| 2026-11-08 | Not adopted from MissingFiles: a CI build number in the version, a packaging script and release zip (the site is deployed, not downloaded), and a nightly performance workflow until a test needs one                                                                                                                                                                                                   | 5.5, 5.6                                         |
+| 2026-11-09 | Our own movement rules, marked _(verify)_ against the original: a diagonal into a wall slides (horizontal first); no corner gaps for the player, snipes and bullets; opposite movement and fire keys cancel; touching a deadly wall means trying to step into it, with no slide                                                                                                                         | 2.1, 2.2, 2.8, 6.2, 9.1                          |
+| 2026-11-15 | Entity sizes are physical, not only drawn: a grid of square character cells at twice the original's scale (walls stay 1 thick), 15 × 11 corridors, a 256 × 240 maze, a 4 × 4 player that moves one cell per step. M1 is reworked in a new WP 07b before WP 08                                                                                                                                           | 2.10, 3, 9.1                                     |
+| 2026-11-15 | Size details: snipe 4 × 2 and always horizontal, ghost and shots 2 × 2, hive 4 × 4; touching means overlapping footprints; the player starts leaning up-left in a corridor; shots start just outside the footprint; guns show the last firing direction; a destroyable wall segment is a whole run between crossings; view 80 × 44 cells + HUD at 8 px; the 07b test-writer commit may replace M1 tests | 2.10, 3, 6.3, 10                                 |
+| 2026-11-16 | A diagonal shot at a corner gap stops, like a shot that hits a wall                                                                                                                                                                                                                                                                                                                                     | 2.10, 10                                         |
+| 2026-11-16 | Verified PRs merge automatically when their required checks pass; production deploys only on a release tag, with Martin's approval once per release; one release per milestone; Martin reviews after merge and plays a staging preview of `main` before each release                                                                                                                                    | 5.1, 5.4, 5.5, 5.6, 5.7, 6.3, 7, 9, 9.1, 9.2, 11 |
 
 ## Sources
 

@@ -11,7 +11,7 @@ You implement one work package of Snipes Web. The specification is `SPEC.md`. It
 2. Read the tests for the package (`git log -1 --stat` and the files under `tests/`) and the code around the change. Follow its style.
 3. Implement the change until the tests pass. Follow the architecture in 4 and the rules in 8: the simplest code that passes, nothing for later.
 4. Run `npm run check`, `npm test`, `npm run build` and `npm run test:e2e`, and fix what fails.
-5. If the package completes a milestone or changes how to run the project, update `README.md`, including its status line.
+5. If the package completes a milestone or changes how to run the project, update `README.md`, including its status line. If it is the last package of a milestone, also bump the version in `package.json` and add its `CHANGELOG.md` section (spec 5.5).
 
 When you receive verifier findings, fix those findings. If you think a finding is wrong, say why and leave it for Martin to decide.
 
