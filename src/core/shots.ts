@@ -2,7 +2,7 @@ import { cellAt, wrap, type Grid, type Point } from "./grid";
 import { PLAYER_SIZE } from "./player";
 
 // Spec 2.10: a shot covers SHOT_SIZE x SHOT_SIZE cells; its position is the top-left one.
-const SHOT_SIZE = 2;
+export const SHOT_SIZE = 2;
 
 export interface Shot {
   readonly x: number;
@@ -42,8 +42,9 @@ function spawnOffset(d: -1 | 0 | 1): number {
 
 // Spec 2.1, 2.5 and 2.10: moves every shot on by one cell along its line, one tick's flight.
 // A shot disappears when that cell would put its footprint on a wall or squeeze it diagonally
-// through a corner gap, and when it enters a cell of a target's footprint; then `hits` gets
-// that target's index. Walls are unharmed.
+// through a corner gap, and when its footprint already covers a cell of a target's footprint
+// (a shot fired onto a target) or enters one; then `hits` gets that target's index. Walls are
+// unharmed.
 export function moveShots(
   maze: Grid,
   shots: readonly Shot[],
@@ -53,6 +54,11 @@ export function moveShots(
   const hits: number[] = [];
   for (const shot of shots) {
     const { x, y, dx, dy } = shot;
+    const struck = targets.findIndex((t) => overlaps(maze, shot, t));
+    if (struck >= 0) {
+      hits.push(struck);
+      continue;
+    }
     const next = wrap(maze, { x: x + dx, y: y + dy });
     const blocked =
       !fits(maze, next.x, next.y) ||

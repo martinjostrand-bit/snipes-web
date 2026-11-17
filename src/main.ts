@@ -15,6 +15,15 @@ const MAX_FRAME_MS = 100;
 
 const TITLE = `Snipes Web v${__APP_VERSION__}`;
 
+// Spec 4.3: the seed in `?seed=N`, when N is a whole number from 0 to 2^32 - 1 written in
+// decimal digits; otherwise undefined.
+function seedFrom(search: string): number | undefined {
+  const value = new URLSearchParams(search).get("seed");
+  if (value === null || !/^\d+$/.test(value)) return undefined;
+  const seed = Number(value);
+  return seed <= 2 ** 32 - 1 ? seed : undefined;
+}
+
 const canvas = document.querySelector<HTMLCanvasElement>("#screen");
 const ctx = canvas?.getContext("2d");
 
@@ -50,8 +59,10 @@ if (canvas && ctx) {
   // Keys released while the window is not focused send no keyup.
   window.addEventListener("blur", () => held.clear());
 
-  // Spec 2.1: a new maze from a new seed for every game.
-  let state = createGame(Math.floor(Math.random() * 2 ** 32));
+  // Spec 2.1 and 4.3: a new maze from a new seed for every game, unless the URL gives one.
+  let state = createGame(
+    seedFrom(location.search) ?? Math.floor(Math.random() * 2 ** 32),
+  );
   let carriedMs = 0;
   let last: number | undefined;
   const frame = (now: number): void => {
