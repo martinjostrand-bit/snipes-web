@@ -281,7 +281,8 @@ describe("2.5 Bullets: shot speed and fire rate over whole games (2.2, 4.3)", ()
   it.each(SEEDS)(
     "in a generated maze, moving and firing at random (seed %d)",
     (seed) => {
-      const game = createGame(seed);
+      // Without hives or snipes (WP 09), so that only walls stop the shots.
+      const game: GameState = { ...createGame(seed), hives: [], snipes: [] };
       const maze = game.maze;
       const problems: string[] = [];
       let lastShot: number | undefined;

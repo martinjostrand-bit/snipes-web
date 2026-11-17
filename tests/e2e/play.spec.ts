@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { quietSeeds } from "./game";
 
 // Spec 2.1, 2.2, 2.8, 2.10, 3, 4.1 and 9.1 WP 07 and WP 07b: the game is drawn on one canvas
 // with the Canvas 2D API. The canvas has a fixed size in pixels (`canvas.width` x
@@ -173,13 +174,15 @@ async function settle(page: Page, name: string): Promise<Shot> {
 // Opens the game and waits until it has drawn the maze across the canvas: at least half of
 // its 4 x 4 equal blocks show more than one colour. A block can fall inside an open
 // corridor of 15 x 11 cells (2.10), so not every block need show a wall.
+// Spec 4.3 and 9.1 WP 09: the game starts from a known seed (`?seed=N`) in which no hive or
+// snipe comes near the view for a minute, so that only the player and its shots change it.
 async function openGame(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
-  await page.goto("/");
+  await page.goto(`/?seed=${quietSeeds(1)[0]}`);
   await installProbe(page);
   await expect
     .poll(() =>

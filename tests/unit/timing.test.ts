@@ -118,9 +118,16 @@ function openExcept(width: number, height: number, walls: Point[]): Grid {
 const field = createGrid(301, 301, () => "open");
 const centre = { x: 150, y: 150 };
 
+// The player alone in `maze`: no hives or snipes (WP 09) to stop the shots.
 function place(maze: Grid, at: Point): GameState {
   const game = createGame(1);
-  return { ...game, maze, player: { ...game.player, x: at.x, y: at.y } };
+  return {
+    ...game,
+    maze,
+    player: { ...game.player, x: at.x, y: at.y },
+    hives: [],
+    snipes: [],
+  };
 }
 
 function at(state: GameState): Point {

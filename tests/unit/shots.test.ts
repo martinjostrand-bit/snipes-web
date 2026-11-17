@@ -209,9 +209,16 @@ function plan(
 
 // --- Through step(state, input) ------------------------------------------------------------
 
+// The player alone in `maze`: no hives or snipes (WP 09) to stop the shots.
 function place(maze: Grid, at: Point): GameState {
   const game = createGame(1);
-  return { ...game, maze, player: { ...game.player, x: at.x, y: at.y } };
+  return {
+    ...game,
+    maze,
+    player: { ...game.player, x: at.x, y: at.y },
+    hives: [],
+    snipes: [],
+  };
 }
 
 // Holds the fire keys (and the movement keys, all along) until a shot appears or PATIENCE
