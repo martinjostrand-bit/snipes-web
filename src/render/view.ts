@@ -1,5 +1,7 @@
 import { cellAt, wrap, type Grid, type Point } from "../core/grid";
+import { HIVE_SIZE, SNIPE_H, SNIPE_W, type Hive } from "../core/hives";
 import { PLAYER_SIZE } from "../core/player";
+import { SHOT_SIZE } from "../core/shots";
 import type { GameState } from "../core/state";
 
 // Spec 2.10 and 3: the view shows VIEW_COLS x VIEW_ROWS square cells of the maze, each CELL_PX
@@ -18,6 +20,9 @@ const WALL = "#2850c8";
 const PLAYER = "#f0d000";
 const SHOT = "#f0f0f0";
 const GUN = "#e04030";
+const SNIPE = "#d070f0";
+// Spec 2.3: a hive's colour for 0-4, 5-9, 10-14 and 15-19 hits taken.
+const HIVE_STAGES = ["#30d0d0", "#40c040", "#f08c20", "#f03c3c"];
 const LABEL = "#ccc";
 
 // Spec 2.1 and 3: the maze cell, wrapped into the grid, drawn at the top-left of the view
@@ -45,24 +50,47 @@ export function drawGame(
       }
     }
   }
-  // Spec 2.10: shots, cut at the view's edge so that they never cover the HUD row.
+  // Spec 2.10: hives, snipes and shots, cut at the view's edge so that they never cover the
+  // HUD row.
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, CELL_PX, VIEW_COLS * CELL_PX, VIEW_ROWS * CELL_PX);
   ctx.clip();
+  for (const hive of state.hives) {
+    const at = onCanvas(maze, origin, hive, HIVE_SIZE, HIVE_SIZE);
+    if (at) drawHive(ctx, at.x, at.y, hive);
+  }
+  for (const snipe of state.snipes) {
+    const at = onCanvas(maze, origin, snipe, SNIPE_W, SNIPE_H);
+    if (at) drawSnipe(ctx, at.x, at.y);
+  }
   for (const shot of state.shots) {
-    // The view column and row of the shot's top-left cell, from -1 so that a shot is also
-    // drawn when only its right or lower cells are in the view.
-    const at = wrap(maze, {
-      x: shot.x - origin.x + 1,
-      y: shot.y - origin.y + 1,
-    });
-    if (at.x <= VIEW_COLS && at.y <= VIEW_ROWS) {
-      drawShot(ctx, (at.x - 1) * CELL_PX, at.y * CELL_PX);
-    }
+    const at = onCanvas(maze, origin, shot, SHOT_SIZE, SHOT_SIZE);
+    if (at) drawShot(ctx, at.x, at.y);
   }
   ctx.restore();
   drawPlayer(ctx, PLAYER_COL * CELL_PX, (PLAYER_ROW + 1) * CELL_PX, state.aim);
+}
+
+// Where a footprint of `width` x `height` cells at `p` is drawn, in canvas pixels, or undefined
+// when no cell of it is in the view. The view column and row are counted from -(width - 1)
+// and -(height - 1), so that a footprint is also drawn when only its right or lower cells
+// are in the view.
+function onCanvas(
+  maze: Grid,
+  origin: Point,
+  p: Point,
+  width: number,
+  height: number,
+): Point | undefined {
+  const at = wrap(maze, {
+    x: p.x - origin.x + width - 1,
+    y: p.y - origin.y + height - 1,
+  });
+  if (at.x >= VIEW_COLS + width - 1 || at.y >= VIEW_ROWS + height - 1) {
+    return undefined;
+  }
+  return { x: (at.x - width + 1) * CELL_PX, y: (at.y - height + 2) * CELL_PX };
 }
 
 // Spec 3: walls are double solid lines, joined to the wall cells next to them.
@@ -121,6 +149,44 @@ function drawPlayer(
       );
     }
   }
+}
+
+// Spec 2.3: the colour a hive that has taken `hits` hits is drawn in. It changes every 5 hits,
+// from cyan through green and orange to red, so the player can see how close it is to
+// breaking.
+export function hiveColour(hits: number): string {
+  return HIVE_STAGES[Math.min(Math.floor(hits / 5), HIVE_STAGES.length - 1)];
+}
+
+// Our own glyph for a hive, over its 4 x 4 cells: a square frame in the colour of its stage
+// around a core that flashes, on and off every 8 ticks (spec 2.3).
+function drawHive(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  hive: Hive,
+): void {
+  ctx.fillStyle = hiveColour(hive.hits);
+  ctx.fillRect(x + 2, y + 2, 28, 3);
+  ctx.fillRect(x + 2, y + 27, 28, 3);
+  ctx.fillRect(x + 2, y + 5, 3, 22);
+  ctx.fillRect(x + 27, y + 5, 3, 22);
+  if (Math.floor(hive.wait / 8) % 2 === 0) ctx.fillRect(x + 10, y + 10, 12, 12);
+}
+
+// Our own glyph for a snipe, over its 4 x 2 cells: a round head with two eyes and a spear
+// pointing right.
+function drawSnipe(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  ctx.fillStyle = SNIPE;
+  ctx.fillRect(x + 4, y + 2, 8, 12); // head
+  ctx.fillRect(x + 2, y + 4, 12, 8);
+  ctx.fillRect(x + 14, y + 7, 14, 2); // spear
+  ctx.fillRect(x + 24, y + 4, 2, 8); // spearhead
+  ctx.fillRect(x + 26, y + 5, 2, 6);
+  ctx.fillRect(x + 28, y + 6, 2, 4);
+  ctx.fillStyle = FLOOR;
+  ctx.fillRect(x + 5, y + 6, 2, 2); // eyes
+  ctx.fillRect(x + 9, y + 6, 2, 2);
 }
 
 // Our own glyph for a shot, over its 2 x 2 cells: a small spark in the shape of a plus.

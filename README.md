@@ -2,7 +2,7 @@
 
 A single-player browser remake of Snipes, the 1982 text-mode maze shooter. Original code and graphics; only the gameplay is recreated. See [SPEC.md](SPEC.md) for the full specification.
 
-> Status: M0 (skeleton), M1 (maze and movement) and M2 (shooting) are done. The game shows a random 256 × 240 maze of 15 × 11 corridors that scrolls with the player, a 4 × 4 spacecraft that moves with the arrow keys (Space = faster) and fires with W A S D in 8 directions, diagonally with two keys held, but not while Space is held; shots fly to the first wall and disappear. M3 (hives and snipes) is next, starting with WP 09.
+> Status: M0 (skeleton), M1 (maze and movement) and M2 (shooting) are done. The game shows a random 256 × 240 maze of 15 × 11 corridors that scrolls with the player, a 4 × 4 spacecraft that moves with the arrow keys (Space = faster) and fires with W A S D in 8 directions, diagonally with two keys held, but not while Space is held; shots fly to the first wall and disappear. M3 (hives and snipes) is under way: hives, 3 to 10 by the skill digit, sit at random spots, change colour as they take hits, break on the 20th and spawn snipes every 2 seconds up to the digit's maximum. Snipes do not move or shoot yet (WP 10). Every game starts at skill level A1 until the title screen (WP 13).
 
 **Live:** https://snipes-web.martin-jo-strand.workers.dev
 
@@ -22,6 +22,8 @@ npm run test:e2e  # build, then Playwright tests in Chromium, Firefox and WebKit
 ```
 
 Install the Playwright browsers once with `npx playwright install`.
+
+To replay a known maze, open the page with `?seed=N`, a whole number from 0 to 4294967295 (for example `http://localhost:5173/?seed=42`). Without it, or with any other value, each game gets a random seed.
 
 `npm test` fails if line coverage of `src/core/` is below 90 %. ESLint forbids `Math.random` and `Date.now` in `src/core/`, so the game stays deterministic.
 
