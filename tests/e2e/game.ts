@@ -81,6 +81,10 @@ export function snipeBox(p: Point): Box {
   return { x: p.x, y: p.y, width: SNIPE_W, height: SNIPE_H };
 }
 
+export function shotBox(p: Point): Box {
+  return { x: p.x, y: p.y, width: SHOT, height: SHOT };
+}
+
 export function playerBox(p: Point): Box {
   return { x: p.x, y: p.y, width: PLAYER, height: PLAYER };
 }
@@ -115,8 +119,9 @@ function clear(maze: Grid, box: Box): boolean {
 const MARGIN = 16;
 const QUIET_TICKS = 60 * TICKS_PER_SECOND;
 
-// Whether, in the game of this seed with no key held, no hive or snipe is in the start view
-// or near it for a whole minute: the page then shows only the maze and the player.
+// Whether, in the game of this seed with no key held, no hive, snipe or snipe's shot (2.4,
+// WP 10) is in the start view or near it for a whole minute: the page then shows only the
+// maze and the player.
 export function isQuiet(seed: number): boolean {
   let state = createGame(seed);
   const { maze } = state;
@@ -126,6 +131,11 @@ export function isQuiet(seed: number): boolean {
   }
   for (let tick = 0; tick <= QUIET_TICKS; tick++) {
     if (state.snipes.some((s) => nearView(maze, origin, snipeBox(s), MARGIN))) {
+      return false;
+    }
+    if (
+      state.snipeShots.some((s) => nearView(maze, origin, shotBox(s), MARGIN))
+    ) {
       return false;
     }
     state = step(state, NO_INPUT);
@@ -256,16 +266,37 @@ export function hiveInSight(): HiveSight {
 
 export interface SnipeSight {
   readonly seed: number;
-  /** Where the snipe is drawn on the canvas. */
+  /** Where on the canvas the snipe is drawn while it is in sight. */
   readonly snipe: Box;
   /** The tick it is spawned on, counted from the start of the game. */
   readonly tick: number;
 }
 
+// Spec 2.4 (WP 10): snipes move, one cell every 10 or 13 ticks, so the snipe is followed for
+// SIGHT_TICKS after it appears. The area it covers in that time, at most SIGHT_CELLS on a side,
+// must be open, in the view, and clear of the player, the hives, the other snipes and the
+// snipes' shots all that time, so that only this snipe is drawn there.
+const SIGHT_TICKS = 2 * TICKS_PER_SECOND;
+const SIGHT_CELLS = 12;
+
+// The smallest box, not wrapped, that holds both boxes, measured the short way round.
+function union(maze: Grid, a: Box, b: Box): Box {
+  const dx = mod(b.x - a.x + maze.width / 2, maze.width) - maze.width / 2;
+  const dy = mod(b.y - a.y + maze.height / 2, maze.height) - maze.height / 2;
+  const x = Math.min(a.x, a.x + dx);
+  const y = Math.min(a.y, a.y + dy);
+  return {
+    x,
+    y,
+    width: Math.max(a.x + a.width, a.x + dx + b.width) - x,
+    height: Math.max(a.y + a.height, a.y + dy + b.height) - y,
+  };
+}
+
 let snipeSight: SnipeSight | undefined;
 
 // The first seed in which, with no key held, a snipe is spawned within the first 20 seconds
-// wholly in the start view, on no hive and clear of the player.
+// and stays in sight in the start view for SIGHT_TICKS, alone in the area it covers.
 export function snipeInSight(): SnipeSight {
   if (snipeSight !== undefined) return snipeSight;
   for (let seed = 1; seed <= 20000; seed++) {
@@ -276,22 +307,44 @@ export function snipeInSight(): SnipeSight {
       continue;
     }
     for (let tick = 1; tick <= 20 * TICKS_PER_SECOND; tick++) {
-      const before = new Set(state.snipes.map((s) => `${s.x},${s.y}`));
+      const before = state.snipes.length;
       state = step(state, NO_INPUT);
-      for (const s of state.snipes) {
-        if (before.has(`${s.x},${s.y}`)) continue;
-        const box = snipeBox(s);
-        const drawn = onCanvas(maze, origin, box);
-        if (
-          drawn !== undefined &&
-          !state.hives.some((h) => overlaps(maze, box, hiveBox(h))) &&
-          !overlaps(maze, box, playerBox(player))
-        ) {
-          snipeSight = { seed, snipe: drawn, tick };
-          return snipeSight;
-        }
+      if (state.snipes.length <= before) continue;
+      // The new snipe is the last to appear (2.4: the snipes are in the order they appeared).
+      const index = state.snipes.length - 1;
+      const states = [state];
+      let later = state;
+      for (let t = 0; t < SIGHT_TICKS; t++) {
+        later = step(later, NO_INPUT);
+        states.push(later);
+      }
+      let area = snipeBox(state.snipes[index]);
+      for (const s of states) {
+        if (s.snipes.length <= index) break;
+        area = union(maze, area, snipeBox(s.snipes[index]));
+      }
+      const drawn = onCanvas(maze, origin, area);
+      const alone = states.every(
+        (s) =>
+          s.snipes.length > index &&
+          s.snipes.every(
+            (o, i) => i === index || !overlaps(maze, area, snipeBox(o)),
+          ) &&
+          !s.snipeShots.some((o) => overlaps(maze, area, shotBox(o))) &&
+          !s.hives.some((h) => overlaps(maze, area, hiveBox(h))) &&
+          !overlaps(maze, area, playerBox(s.player)),
+      );
+      if (
+        drawn !== undefined &&
+        area.width <= SIGHT_CELLS &&
+        area.height <= SIGHT_CELLS &&
+        clear(maze, area) &&
+        alone
+      ) {
+        snipeSight = { seed, snipe: drawn, tick };
+        return snipeSight;
       }
     }
   }
-  throw new Error("No seed with a snipe spawned in the start view");
+  throw new Error("No seed with a snipe that stays in sight in the start view");
 }

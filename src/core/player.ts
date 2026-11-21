@@ -1,4 +1,4 @@
-import { cellAt, wrap, type Grid } from "./grid";
+import { cellAt, wrap, type Box, type Grid, type Point } from "./grid";
 import type { InputState } from "./state";
 
 // Spec 2.2: ticks between two steps of the player, at normal speed and with Space held.
@@ -13,6 +13,10 @@ export interface Player {
   readonly y: number;
   /** Ticks left before the player may take its next step. */
   readonly wait: number;
+}
+
+export function playerBox(player: Point): Box {
+  return { x: player.x, y: player.y, width: PLAYER_SIZE, height: PLAYER_SIZE };
 }
 
 // Spec 2.1, 2.2 and 2.10: one cell at a time in 8 directions, faster with Space, blocked by

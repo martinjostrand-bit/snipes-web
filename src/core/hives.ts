@@ -1,11 +1,9 @@
-import { cellAt, wrap, type Grid, type Point } from "./grid";
+import { fits, overlaps, wrap, type Box, type Grid, type Point } from "./grid";
 import { nextFloat, type Rng } from "./rng";
+import { createSnipe, SNIPE_H, SNIPE_W, type Snipe } from "./snipes";
 
-// Spec 2.10: a hive covers HIVE_SIZE x HIVE_SIZE cells and a snipe SNIPE_W x SNIPE_H; the
-// position of each is its top-left cell.
+// Spec 2.10: a hive covers HIVE_SIZE x HIVE_SIZE cells; its position is its top-left cell.
 export const HIVE_SIZE = 4;
-export const SNIPE_W = 4;
-export const SNIPE_H = 2;
 
 // Spec 2.3: the 20th hit destroys a hive.
 const HIVE_HITS = 20;
@@ -30,18 +28,6 @@ export interface Hive {
   readonly hits: number;
   /** Ticks left before the hive spawns its next snipe. */
   readonly wait: number;
-}
-
-export interface Snipe {
-  readonly x: number;
-  readonly y: number;
-}
-
-interface Box {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
 }
 
 export function hiveBox(hive: Point): Box {
@@ -93,9 +79,10 @@ export function hitHives(
     .filter((h) => h.hits < HIVE_HITS);
 }
 
-// Spec 2.3 and 2.10: every hive counts down to its next spawn. When it is due and there are
-// fewer than `max` enemies on the map, a snipe appears at a random place touching the hive
-// where its footprint covers no wall; with no such place, none appears.
+// Spec 2.3, 2.4 and 2.10: every hive counts down to its next spawn. When it is due and there
+// are fewer than `max` enemies on the map, a snipe appears at a random place touching the
+// hive where its footprint covers no wall, and draws its direction and turning sense; with no
+// such place, none appears.
 export function spawnSnipes(
   maze: Grid,
   start: Rng,
@@ -113,43 +100,13 @@ export function spawnSnipes(
       ).filter((p) => fits(maze, { ...p, width: SNIPE_W, height: SNIPE_H }));
       if (places.length > 0) {
         let f: number;
+        let snipe: Snipe;
         [f, rng] = nextFloat(rng);
-        all = [...all, places[Math.floor(f * places.length)]];
+        [snipe, rng] = createSnipe(rng, places[Math.floor(f * places.length)]);
+        all = [...all, snipe];
       }
     }
     return { ...hive, wait: SPAWN_TICKS - 1 };
   });
   return { rng, hives: next, snipes: all };
-}
-
-// Spec 2.10: whether every cell of the box is open, with wrap-around.
-function fits(maze: Grid, box: Box): boolean {
-  for (let dy = 0; dy < box.height; dy++) {
-    for (let dx = 0; dx < box.width; dx++) {
-      if (cellAt(maze, { x: box.x + dx, y: box.y + dy }) === "wall") {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-// Whether two boxes share a cell, with wrap-around.
-function overlaps(maze: Grid, a: Box, b: Box): boolean {
-  return (
-    spans(a.x, a.width, b.x, b.width, maze.width) &&
-    spans(a.y, a.height, b.y, b.height, maze.height)
-  );
-}
-
-// Whether [a, a + aLength) and [b, b + bLength) meet on an axis that wraps after `size`.
-function spans(
-  a: number,
-  aLength: number,
-  b: number,
-  bLength: number,
-  size: number,
-): boolean {
-  const offset = (((a - b) % size) + size) % size;
-  return offset < bLength || offset > size - aLength;
 }

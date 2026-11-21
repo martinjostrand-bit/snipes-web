@@ -1,5 +1,4 @@
-import { cellAt, wrap, type Grid, type Point } from "./grid";
-import { PLAYER_SIZE } from "./player";
+import { cellAt, wrap, type Box, type Grid, type Point } from "./grid";
 
 // Spec 2.10: a shot covers SHOT_SIZE x SHOT_SIZE cells; its position is the top-left one.
 export const SHOT_SIZE = 2;
@@ -11,33 +10,27 @@ export interface Shot {
   readonly dy: -1 | 0 | 1;
 }
 
-interface Box {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
-
-// Spec 2.10: a player's shot appears just outside the player's footprint in the firing
-// direction: over its middle two columns or rows when fired straight, touching the matching
-// corner when fired diagonally. Undefined when no fire key is held or a cell there is a wall.
+// Spec 2.4 and 2.10: a shot appears just outside the footprint of whoever fires it (the
+// player or a snipe), in the firing direction: over the footprint's middle two columns or
+// rows when fired straight, touching the matching corner when fired diagonally. Undefined
+// when no direction is given or a cell there is a wall.
 export function fireShot(
   maze: Grid,
-  player: Point,
+  from: Box,
   dx: -1 | 0 | 1,
   dy: -1 | 0 | 1,
 ): Shot | undefined {
   if (dx === 0 && dy === 0) return undefined;
   const at = wrap(maze, {
-    x: player.x + spawnOffset(dx),
-    y: player.y + spawnOffset(dy),
+    x: from.x + spawnOffset(dx, from.width),
+    y: from.y + spawnOffset(dy, from.height),
   });
   return fits(maze, at.x, at.y) ? { ...at, dx, dy } : undefined;
 }
 
-function spawnOffset(d: -1 | 0 | 1): number {
+function spawnOffset(d: -1 | 0 | 1, size: number): number {
   if (d < 0) return -SHOT_SIZE;
-  return d > 0 ? PLAYER_SIZE : (PLAYER_SIZE - SHOT_SIZE) / 2;
+  return d > 0 ? size : (size - SHOT_SIZE) / 2;
 }
 
 // Spec 2.1, 2.5 and 2.10: moves every shot on by one cell along its line, one tick's flight.

@@ -1,7 +1,8 @@
 import { cellAt, wrap, type Grid, type Point } from "../core/grid";
-import { HIVE_SIZE, SNIPE_H, SNIPE_W, type Hive } from "../core/hives";
+import { HIVE_SIZE, type Hive } from "../core/hives";
 import { PLAYER_SIZE } from "../core/player";
 import { SHOT_SIZE } from "../core/shots";
+import { SNIPE_H, SNIPE_W, type Snipe } from "../core/snipes";
 import type { GameState } from "../core/state";
 
 // Spec 2.10 and 3: the view shows VIEW_COLS x VIEW_ROWS square cells of the maze, each CELL_PX
@@ -62,9 +63,9 @@ export function drawGame(
   }
   for (const snipe of state.snipes) {
     const at = onCanvas(maze, origin, snipe, SNIPE_W, SNIPE_H);
-    if (at) drawSnipe(ctx, at.x, at.y);
+    if (at) drawSnipe(ctx, at.x, at.y, snipe);
   }
-  for (const shot of state.shots) {
+  for (const shot of [...state.shots, ...state.snipeShots]) {
     const at = onCanvas(maze, origin, shot, SHOT_SIZE, SHOT_SIZE);
     if (at) drawShot(ctx, at.x, at.y);
   }
@@ -174,16 +175,34 @@ function drawHive(
   if (Math.floor(hive.wait / 8) % 2 === 0) ctx.fillRect(x + 10, y + 10, 12, 12);
 }
 
-// Our own glyph for a snipe, over its 4 x 2 cells: a round head with two eyes and a spear
-// pointing right.
-function drawSnipe(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+// Our own glyph for a snipe, over its 4 x 2 cells: a round head with two eyes in its left
+// half and, in its right half, a spear pointing the way it moves (spec 3).
+function drawSnipe(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  { dx, dy }: Snipe,
+): void {
   ctx.fillStyle = SNIPE;
   ctx.fillRect(x + 4, y + 2, 8, 12); // head
   ctx.fillRect(x + 2, y + 4, 12, 8);
-  ctx.fillRect(x + 14, y + 7, 14, 2); // spear
-  ctx.fillRect(x + 24, y + 4, 2, 8); // spearhead
-  ctx.fillRect(x + 26, y + 5, 2, 6);
-  ctx.fillRect(x + 28, y + 6, 2, 4);
+  // The spear is 2 x 2 pixel dots: a shaft through the middle of the right half, and two
+  // barbs going back from its tip.
+  const cx = x + 23;
+  const cy = y + 7;
+  for (const k of [-6, -4, -2, 0, 2, 4, 6]) {
+    ctx.fillRect(cx + dx * k, cy + dy * k, 2, 2);
+  }
+  for (const k of [2, 4]) {
+    for (const side of [-1, 1]) {
+      ctx.fillRect(
+        cx + dx * (6 - k) - dy * k * side,
+        cy + dy * (6 - k) + dx * k * side,
+        2,
+        2,
+      );
+    }
+  }
   ctx.fillStyle = FLOOR;
   ctx.fillRect(x + 5, y + 6, 2, 2); // eyes
   ctx.fillRect(x + 9, y + 6, 2, 2);
