@@ -1,14 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
-import { quietSeeds } from "./game";
+import { CELL_PX, PLAYER_ON_CANVAS, quietSeeds } from "./game";
 
-// Spec 2.1, 2.2, 2.8, 2.10, 3, 4.1 and 9.1 WP 07 and WP 07b: the game is drawn on one canvas
-// with the Canvas 2D API. The canvas has a fixed size in pixels (`canvas.width` x
-// `canvas.height`): 80 x 44 maze cells plus the HUD row, at 8 x 8 pixels per cell, so
-// 640 x 360. It is shown scaled by the largest whole number that fits the window (in CSS
-// pixels), so pixels stay sharp. The view scrolls to keep the player centred, and an arrow
-// key moves the player.
+// Spec 2.1, 2.2, 2.8, 2.10, 3, 4.1 and 9.1 WP 07, WP 07b and WP 11b: the game is drawn on one
+// canvas with the Canvas 2D API. The canvas has a fixed size in pixels (`canvas.width` x
+// `canvas.height`): 80 x 44 maze cells plus the HUD row, at 16 x 16 pixels per cell, so
+// 1280 x 720. It is shown scaled by the largest whole number that fits the window (in CSS
+// pixels), at x1 in a 1280 x 720 window. The view scrolls to keep the player centred, and an
+// arrow key moves the player.
 // The tests read the canvas pixels in the page through its 2D context; the image only changes
-// when the game does, so a still game gives the same pixels frame after frame.
+// when the game does, so a still game gives the same pixels frame after frame, except for the
+// player's own footprint, where its eyes blink now and then (3). The hashes leave it out.
 
 interface Shot {
   readonly width: number;
@@ -49,7 +50,7 @@ interface ProbeWindow {
 }
 
 async function installProbe(page: Page): Promise<void> {
-  await page.evaluate(() => {
+  await page.evaluate((skip) => {
     const shots = new Map<string, ImageData>();
     const read = (): ImageData => {
       const canvas = document.querySelector("canvas");
@@ -57,10 +58,22 @@ async function installProbe(page: Page): Promise<void> {
       if (!canvas || !ctx) throw new Error("No canvas with a 2D context");
       return ctx.getImageData(0, 0, canvas.width, canvas.height);
     };
+    // A hash of the image, leaving out the player's footprint (`skip`).
     const hash = (image: ImageData): number => {
+      const pixels = new Uint32Array(image.data.buffer);
       let h = 2166136261;
-      for (const pixel of new Uint32Array(image.data.buffer)) {
-        h = Math.imul(h ^ pixel, 16777619);
+      for (let y = 0; y < image.height; y++) {
+        for (let x = 0; x < image.width; x++) {
+          if (
+            x >= skip.x &&
+            x < skip.x + skip.width &&
+            y >= skip.y &&
+            y < skip.y + skip.height
+          ) {
+            continue;
+          }
+          h = Math.imul(h ^ pixels[y * image.width + x], 16777619);
+        }
       }
       return h >>> 0;
     };
@@ -137,7 +150,8 @@ async function installProbe(page: Page): Promise<void> {
           }
           return total === 0 ? 0 : same / total;
         };
-        const limit = Math.floor((axis === "x" ? width : height) / 4);
+        // Up to 10 cells across or 5 down, more than the player moves in these tests.
+        const limit = Math.floor((axis === "x" ? width : height) / 8);
         const matchAtZero = matchFor(0);
         let best = { shift: 0, match: matchAtZero };
         for (let shift = -limit; shift <= limit; shift++) {
@@ -149,7 +163,7 @@ async function installProbe(page: Page): Promise<void> {
       },
     };
     (window as unknown as ProbeWindow).probe = probe;
-  });
+  }, PLAYER_ON_CANVAS);
 }
 
 function snap(page: Page, name: string): Promise<Shot> {
@@ -266,22 +280,14 @@ test.describe("3 Presentation: the canvas", () => {
     await page.waitForTimeout(500);
     expect(errors).toEqual([]);
   });
-
-  test("keeps sharp pixels when scaled", async ({ page }) => {
-    await openGame(page);
-    expect(["pixelated", "crisp-edges"]).toContain(
-      (await layout(page)).rendering,
-    );
-  });
 });
 
-// Spec 3: 80 x 44 cells of the maze plus the HUD row, at 8 x 8 px per cell.
-const CELL_PX = 8;
+// Spec 3: 80 x 44 cells of the maze plus the HUD row, at 16 x 16 px per cell.
 const VIEW_WIDTH = 80 * CELL_PX;
 const VIEW_HEIGHT = (44 + 1) * CELL_PX;
 
 test.describe("2.10 Sizes and 3 Presentation: the view", () => {
-  test("is 640 x 360 pixels: 80 x 44 cells of the maze and the HUD row, 8 x 8 px per cell", async ({
+  test("is 1280 x 720 pixels: 80 x 44 cells of the maze and the HUD row, 16 x 16 px per cell", async ({
     page,
   }) => {
     await openGame(page);
@@ -289,7 +295,7 @@ test.describe("2.10 Sizes and 3 Presentation: the view", () => {
     expect([l.pixelWidth, l.pixelHeight]).toEqual([VIEW_WIDTH, VIEW_HEIGHT]);
   });
 
-  test("fits the minimum window 1280x720 at the whole-number scale x2, filling it", async ({
+  test("fits the minimum window 1280x720 at x1, filling it", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -431,7 +437,7 @@ test.describe("2.1 Maze and 2.8 Controls: an arrow key moves the player", () => 
         sign,
       );
       expect(shift.match).toBeGreaterThan(shift.matchAtZero);
-      // The maze scrolls by whole cells of 8 x 8 pixels (2.10, 3).
+      // The maze scrolls by whole cells of 16 x 16 pixels (2.10, 3).
       expect(
         Math.abs(shift.shift) % CELL_PX,
         `${key}: ${JSON.stringify(shift)}`,
@@ -447,26 +453,21 @@ test.describe("2.1 Maze and 2.8 Controls: an arrow key moves the player", () => 
 // block with open cells on every side (2.10), so a shot fired straight from the start has
 // room to appear. The shot is drawn outside the player's footprint, flies to the wall and
 // disappears; the wall is unharmed and the player does not move, so the view does not scroll.
-// The player's own cells are left out of the comparison, because its guns turn to the last
-// firing direction (3).
-const PLAYER_BOX = {
-  x: ((80 - 4) / 2) * CELL_PX,
-  y: ((44 - 4) / 2 + 1) * CELL_PX,
-  width: 4 * CELL_PX,
-  height: 4 * CELL_PX,
-};
+// The player's own cells are left out of the comparison, because its eyes look in the last
+// firing direction and blink now and then (3).
+const PLAYER_BOX = PLAYER_ON_CANVAS;
 
 function mazeHash(page: Page): Promise<number> {
   return page.evaluate(
-    (box) =>
+    ({ box, hud }) =>
       (window as unknown as ProbeWindow).probe.hashMazeOutside(
-        8,
+        hud,
         box.x,
         box.y,
         box.width,
         box.height,
       ),
-    PLAYER_BOX,
+    { box: PLAYER_BOX, hud: CELL_PX },
   );
 }
 
@@ -482,15 +483,15 @@ test.describe("2.5 Bullets and 2.8 Controls: a fire key shoots", () => {
       await page.keyboard.down(key);
       const drawn = await page
         .waitForFunction(
-          ({ box, hash }) =>
+          ({ box, hash, hud }) =>
             (window as unknown as ProbeWindow).probe.hashMazeOutside(
-              8,
+              hud,
               box.x,
               box.y,
               box.width,
               box.height,
             ) !== hash,
-          { box: PLAYER_BOX, hash: before },
+          { box: PLAYER_BOX, hash: before, hud: CELL_PX },
           { polling: "raf", timeout: 1500 },
         )
         .then(

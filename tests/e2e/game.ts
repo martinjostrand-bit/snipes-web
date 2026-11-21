@@ -10,10 +10,10 @@ import {
 // game's own core. With `?seed=N` the page plays `createGame(N)` (at its default skill level,
 // until the title screen of WP 13 lets the player choose one) and steps it with the keys held,
 // so a game in the core with no keys held shows what the page shows while no key is pressed.
-// The view is 80 x 44 maze cells of 8 x 8 pixels below one HUD row, with the player's 4 x 4
+// The view is 80 x 44 maze cells of 16 x 16 pixels below one HUD row, with the player's 4 x 4
 // footprint in its middle (2.10, 3).
 
-export const CELL_PX = 8;
+export const CELL_PX = 16;
 export const VIEW_COLS = 80;
 export const VIEW_ROWS = 44;
 export const PLAYER = 4;
@@ -30,6 +30,16 @@ export interface Box {
   readonly width: number;
   readonly height: number;
 }
+
+// Where the player's footprint is drawn on the canvas: in the middle of the view, below the
+// HUD row (3). The player's eyes blink now and then (3), so tests that compare whole pictures
+// leave these pixels out.
+export const PLAYER_ON_CANVAS: Box = {
+  x: ((VIEW_COLS - PLAYER) / 2) * CELL_PX,
+  y: ((VIEW_ROWS - PLAYER) / 2 + 1) * CELL_PX,
+  width: PLAYER * CELL_PX,
+  height: PLAYER * CELL_PX,
+};
 
 function mod(n: number, size: number): number {
   return ((n % size) + size) % size;
