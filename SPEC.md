@@ -1,6 +1,6 @@
 # Snipes Web — Specification
 
-Nov 17, 2026 · @Martin · Draft v0.10
+Nov 21, 2026 · @Martin · Draft v0.11
 
 - v0.2: sections 5 and 7 filled in from the HundAlder project's GitHub and publishing setup.
 - v0.3: CI, build and quality principles adopted from the MissingFiles project (5.2–5.7, 6.3–6.4, 9, 11).
@@ -11,6 +11,7 @@ Nov 17, 2026 · @Martin · Draft v0.10
 - v0.8: speeds and the letter and digit tables from the original's reverse-engineered source; 60 ticks/s; bouncing shots; destroyable walls dropped; new WP 08b (2.2, 2.5, 2.6, 2.9, 2.10, 4.3, 9, 9.1, 10, 11).
 - v0.9: optional `?seed=N` in the page URL; the 6.3 exception covers test setup that a new feature changes; WP 09 also draws hives and snipes (4.3, 6.3, 9.1, 11).
 - v0.10: snipe movement, aim and accuracy from the original (2.4, 2.6, 2.7, 9.1, 10, 11).
+- v0.11: hives count like walls in a snipe's corner-gap test (2.4, 11).
 
 ## 1. Overview and goals
 
@@ -89,7 +90,7 @@ Ghosts appear only when the skill letter enables them (2.6). "Creep" in some des
 - **Random draws** come from the game's PRNG, one `nextFloat` value each, in the order given here. A chance p succeeds when the value is below p; "a random one of n" is item ⌊value × n⌋ of a list in a fixed order. Nothing is drawn that this text does not name.
 - **Direction to the player**, the first that applies: if |dx| < 2, up when dy < 0, else down; if |dy| < 2, left when dx < 0, else right; otherwise the diagonal toward the player.
 - **A new snipe** draws its direction (a random one of the 8), then its turning sense (a random one of clockwise and anticlockwise), which it keeps. It takes its first step on the tick after it appears.
-- **Open for a snipe** means its 4 × 2 footprint covers no wall and no hive cell, and the step is not a diagonal through a corner gap (2.1, 2.10). Snipes may overlap each other and the player.
+- **Open for a snipe** means its 4 × 2 footprint covers no wall and no hive cell, and the step is not a diagonal through a corner gap (2.1, 2.10). For a snipe, a straight position on the way counts as blocked when it covers a wall or a hive cell, so it cannot squeeze diagonally between a hive and a wall or between two hives. Snipes may overlap each other and the player.
 - **Steps:** a snipe steps when its wait is over: 10 ticks after a straight step and 13 after a diagonal one (about 6 and 4.6 cells/s). Each step:
   1. It draws the keep chance, 3/4. On success it tries its current direction, and moves if that position is open.
   2. If the keep chance failed, or the position was blocked, it draws the random-turn chance, 1/4. On success it draws a random one of the 8 directions; otherwise it takes the direction to the player. It then tries up to 8 directions, starting with that one and turning one-eighth of a turn in its turning sense after each blocked try, and moves in the first open one, which becomes its direction. If all 8 are blocked it stays put, keeps the last direction tried and waits as after a straight step.
@@ -601,6 +602,7 @@ Decisions are recorded here with their date when they are made, as in MissingFil
 | 2026-11-17 | Optional `?seed=N` URL parameter, so e2e tests start from a known maze; the 6.3 test exception also covers setup that a new feature changes                                                                                                                                                                                                                                                             | 4.3, 6.3, 9.1                                    |
 | 2026-11-17 | Snipes move, turn and fire as in the original: fire only along their direction at an aligned player, with a chance that falls with distance and rises with the letter's accuracy; walls don't stop them firing                                                                                                                                                                                          | 2.4, 2.6, 2.7, 9.1, 10                           |
 | 2026-11-17 | Snipe details: walls and hives block snipes, snipes may overlap each other and the player; a fixed PRNG draw order for every chance; the order of events within a tick                                                                                                                                                                                                                                  | 2.4, 4.3, 9.1                                    |
+| 2026-11-21 | Hives count like walls in a snipe's corner-gap test                                                                                                                                                                                                                                                                                                                                                     | 2.4                                              |
 
 ## Sources
 
