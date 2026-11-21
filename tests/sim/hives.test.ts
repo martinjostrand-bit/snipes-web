@@ -21,6 +21,12 @@ import {
 // - each live hive spawns at most one snipe a tick, and a destroyed hive spawns no more.
 //
 // Ghosts come with WP 15, so the games here use letters without ghosts (A to C).
+//
+// Spec 2.4 and 9.1 WP 10: snipes move and fire, and their shots (`state.snipeShots`) also
+// hit hives and kill snipes. A hit may come from a player's shot or a snipe's. Where a test
+// counts the snipes the hives spawn, it removes the snipes' shots as they appear, before they
+// first move (2.4: a shot first moves on the tick after it appears); the hunt removes the
+// snipes too, so that none gets in the way of the player's shots.
 
 type Axis = InputState["moveX"];
 type Hive = GameState["hives"][number];
@@ -196,11 +202,12 @@ function watch(maze: Grid, max: number): Watch {
       was.delete(k);
     }
     // The hives left in `was` were destroyed this tick, each by its 20th hit; every hit is a
-    // shot that was in flight, so a hive is never destroyed early.
+    // shot that was in flight, the player's or a snipe's, so a hive is never destroyed early.
     for (const old of was.values()) hitsTaken += HITS - old.hits;
-    if (hitsTaken > before.shots.length) {
+    const inFlight = before.shots.length + before.snipeShots.length;
+    if (hitsTaken > inFlight) {
       report(
-        `${hitsTaken} hits needed (${was.size} hives destroyed) from ${before.shots.length} shots in flight`,
+        `${hitsTaken} hits needed (${was.size} hives destroyed) from ${inFlight} shots in flight`,
       );
     }
     // Each live hive spawns at most one snipe a tick; with no hive, none appears.
@@ -363,7 +370,8 @@ interface Hunt {
 }
 
 // Walks to each hive in turn, along the shortest way that touches no hive, and fires at it
-// from a spot where every shot hits it, until it is destroyed. Then waits a minute.
+// from a spot where every shot hits it, until it is destroyed. Then waits a minute. The
+// snipes are removed as they appear, before their first step, so none gets in the way.
 function hunt(seed: number, skill: string): Hunt {
   let state = createGame(seed, skill);
   const { maze } = state;
@@ -376,10 +384,11 @@ function hunt(seed: number, skill: string): Hunt {
   let spawned = 0;
   const advance = (keys: InputState): void => {
     const before = state;
-    state = step(state, keys);
+    const after = step(state, keys);
     tick++;
-    checks.tick(before, state, tick);
-    spawned += Math.max(0, state.snipes.length - before.snipes.length);
+    checks.tick(before, after, tick);
+    spawned += Math.max(0, after.snipes.length - before.snipes.length);
+    state = { ...after, snipes: [], snipeShots: [] };
   };
 
   while (state.hives.length > 0 && checks.problems.length === 0) {
@@ -447,9 +456,9 @@ function hunt(seed: number, skill: string): Hunt {
   const snipesAtEnd = state.snipes.length;
   const spawnedDuringHunt = spawned;
   for (let t = 0; t < MINUTE && checks.problems.length === 0; t++) {
-    const before = state.snipes.length;
+    const before = spawned;
     advance(NO_INPUT);
-    if (state.snipes.length > before) {
+    if (spawned > before) {
       checks.problems.push(`tick ${tick}: a snipe spawned with no hive left`);
     }
   }
@@ -480,7 +489,7 @@ describe("2.6 Skill level / 6.2 Invariants: the enemies fill the map up to the d
       let reached = -1;
       for (let tick = 1; tick <= PATIENCE; tick++) {
         const before = state;
-        state = step(state, NO_INPUT);
+        state = { ...step(state, NO_INPUT), snipeShots: [] };
         checks.tick(before, state, tick);
         if (state.snipes.length === max) {
           reached = tick;
@@ -494,7 +503,7 @@ describe("2.6 Skill level / 6.2 Invariants: the enemies fill the map up to the d
       // It stays full: nothing is spawned beyond the maximum.
       for (let tick = 1; tick <= MINUTE; tick++) {
         const before = state;
-        state = step(state, NO_INPUT);
+        state = { ...step(state, NO_INPUT), snipeShots: [] };
         checks.tick(before, state, reached + tick);
       }
       expect(checks.problems).toEqual([]);
@@ -549,7 +558,7 @@ describe("2.3 Hives / 6.2 Invariants: hunting down every hive", () => {
       expect(result.shotsFired).toEqual(
         new Array<number>(result.hives).fill(HITS),
       );
-      // The snipes they spawned stayed; no hive is left to spawn more.
+      // The hives spawned while they lived; no hive is left to spawn more.
       expect(result.spawnedDuringHunt).toBeGreaterThan(0);
       expect(result.snipesLater).toBe(result.snipesAtEnd);
     },

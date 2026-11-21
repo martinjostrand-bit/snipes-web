@@ -194,11 +194,24 @@ function firedThisTick(before: GameState, after: GameState): boolean {
   return after.shots.length > before.shots.length;
 }
 
+// Spec 2.4 and 9.1 WP 10: snipes move and fire, and their shots (`state.snipeShots`) damage
+// hives and kill snipes. Where these tests count the snipes the hives spawn, `calm` steps and
+// then removes the snipes' shots as they appear, before they first move (2.4: a shot first
+// moves on the tick after it appears). Where the snipes would get in the way of the player's
+// shots, `alone` steps and then removes the snipes too, before their first step.
+function calm(state: GameState, input: InputState): GameState {
+  return { ...step(state, input), snipeShots: [] };
+}
+
+function alone(state: GameState, input: InputState): GameState {
+  return { ...step(state, input), snipes: [], snipeShots: [] };
+}
+
 // Steps with NO_INPUT until `state.snipes` has `count` snipes, at most `limit` ticks.
 function until(state: GameState, count: number, limit = PATIENCE): GameState {
   let current = state;
   for (let tick = 0; tick < limit && current.snipes.length < count; tick++) {
-    current = step(current, NO_INPUT);
+    current = calm(current, NO_INPUT);
   }
   return current;
 }
@@ -211,7 +224,7 @@ function loneSpawns(count: number): { ticks: number[]; added: number[] } {
   const added: number[] = [];
   for (let tick = 1; tick <= PATIENCE && ticks.length < count; tick++) {
     const before = state.snipes.length;
-    state = step(state, NO_INPUT);
+    state = calm(state, NO_INPUT);
     if (state.snipes.length !== before) {
       ticks.push(tick);
       added.push(state.snipes.length - before);
@@ -411,7 +424,7 @@ describe("2.3 Hives: withstand 19 hits, the 20th destroys the hive (2.5, 6.2)", 
       let destroyedAt = -1;
       for (let tick = 1; tick <= (HITS + 5) * FIRE_TICKS; tick++) {
         const before = state;
-        state = step(state, fire(dx, dy));
+        state = alone(state, fire(dx, dy));
         const was = hiveAt(before, at);
         const now = hiveAt(state, at);
         if (was === undefined) {
@@ -590,7 +603,7 @@ describe("2.3 Hives: spawn continuously, at a fixed interval", () => {
       let state = arena(room, { x: 4, y: 4 }, at, "A9");
       const rounds = 4;
       for (let tick = 0; tick < rounds * interval; tick++) {
-        state = step(state, NO_INPUT);
+        state = calm(state, NO_INPUT);
       }
       // In 4 intervals each hive spawns 4 times, or 3 or 5 depending on where in its
       // interval it started.
@@ -607,7 +620,7 @@ describe("2.3 Hives: spawn continuously, at a fixed interval", () => {
       const game = createGame(11, "A9");
       let state = game;
       for (let tick = 0; tick < 3 * interval; tick++) {
-        state = step(state, NO_INPUT);
+        state = calm(state, NO_INPUT);
       }
       const n = game.hives.length;
       expect(state.snipes.length).toBeGreaterThanOrEqual(2 * n);
@@ -626,7 +639,7 @@ describe("2.3 Hives: spawn continuously, at a fixed interval", () => {
       // Three snipes leave the map.
       state = { ...state, snipes: state.snipes.slice(3) };
       for (let tick = 0; tick < 5 * interval; tick++) {
-        state = step(state, NO_INPUT);
+        state = calm(state, NO_INPUT);
         expect(state.snipes.length).toBeLessThanOrEqual(10);
       }
       expect(state.snipes).toHaveLength(10);
@@ -643,7 +656,7 @@ describe("2.3 Hives / 2.6 Skill level: the number of enemies never exceeds the d
       let state = arena(room, { x: 4, y: 4 }, [{ x: 40, y: 30 }]);
       let most = 0;
       for (let tick = 0; tick < 15 * interval; tick++) {
-        state = step(state, NO_INPUT);
+        state = calm(state, NO_INPUT);
         most = Math.max(most, state.snipes.length);
       }
       expect(most).toBe(MAX_ENEMIES[0]);
@@ -675,7 +688,7 @@ describe("2.3 Hives / 2.6 Skill level: the number of enemies never exceeds the d
         expect(state.hives).toHaveLength(10);
         let most = 0;
         for (let tick = 0; tick < 6 * interval; tick++) {
-          state = step(state, NO_INPUT);
+          state = calm(state, NO_INPUT);
           most = Math.max(most, state.snipes.length);
           expect(
             state.snipes.length,
@@ -705,7 +718,7 @@ describe("2.3 Hives / 2.6 Skill level: the number of enemies never exceeds the d
       ],
     };
     for (let tick = 0; tick < 4 * interval; tick++) {
-      state = step(state, NO_INPUT);
+      state = calm(state, NO_INPUT);
       expect(state.snipes).toHaveLength(10);
     }
   });
@@ -723,12 +736,13 @@ describe("2.3 Hives: a destroyed hive stops spawning; the snipes it spawned stay
       expect(state.snipes.length).toBeGreaterThanOrEqual(2);
       let twin = state;
 
-      // Fire until the hive is destroyed.
+      // Fire until the hive is destroyed. Snipes that wander into the line of fire take some
+      // of the shots (2.4), so there is time for more than 20.
       let destroyedAt = -1;
-      for (let tick = 0; tick < (HITS + 5) * FIRE_TICKS; tick++) {
+      for (let tick = 0; tick < (HITS + 40) * FIRE_TICKS; tick++) {
         const before = state;
-        state = step(state, fire(1, 0));
-        twin = step(twin, NO_INPUT);
+        state = calm(state, fire(1, 0));
+        twin = calm(twin, NO_INPUT);
         if (before.hives.length === 1 && state.hives.length === 0) {
           destroyedAt = tick;
           // The snipes it spawned stay.
@@ -741,8 +755,8 @@ describe("2.3 Hives: a destroyed hive stops spawning; the snipes it spawned stay
       const left = state.snipes.length;
       const twinBefore = twin.snipes.length;
       for (let tick = 0; tick < 5 * interval; tick++) {
-        state = step(state, NO_INPUT);
-        twin = step(twin, NO_INPUT);
+        state = calm(state, NO_INPUT);
+        twin = calm(twin, NO_INPUT);
         expect(state.snipes.length, `tick ${tick}`).toBeLessThanOrEqual(left);
         expect(state.hives).toEqual([]);
       }
@@ -768,12 +782,12 @@ describe("2.3 Hives: a destroyed hive stops spawning; the snipes it spawned stay
         ),
       };
       for (let tick = 0; tick < FIRE_TICKS; tick++) {
-        state = step(state, tick === 0 ? fire(1, 0) : NO_INPUT);
+        state = calm(state, tick === 0 ? fire(1, 0) : NO_INPUT);
       }
       expect(state.hives.map(({ x, y }) => ({ x, y }))).toEqual([other]);
       const before = state.snipes.length;
       for (let tick = 0; tick < 3 * interval; tick++) {
-        state = step(state, NO_INPUT);
+        state = calm(state, NO_INPUT);
       }
       expect(state.snipes.length - before).toBeGreaterThanOrEqual(2);
       expect(state.snipes.length - before).toBeLessThanOrEqual(4);

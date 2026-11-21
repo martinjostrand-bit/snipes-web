@@ -2,13 +2,21 @@ import { expect, test } from "@playwright/test";
 // A namespace import, so that a missing export fails this test only, not the whole run.
 import * as view from "../../src/render/view";
 import { floorPixel, open, pixelOf, pixelsIn } from "./canvas";
-import { CELL_PX, hiveInSight, snipeInSight, TICKS_PER_SECOND } from "./game";
+import {
+  CELL_PX,
+  hiveInSight,
+  SNIPE_H,
+  SNIPE_W,
+  snipeInSight,
+  TICKS_PER_SECOND,
+} from "./game";
 
 // Spec 2.3, 3 and 9.1 WP 09: hives, with their colour stages, and the snipes they spawn are
 // drawn. A hive that has taken `hits` hits is drawn in `hiveColour(hits)` (some of its pixels
 // have exactly that colour; it may flash). The tests find seeds in Node with the game's own
 // core (see game.ts): one whose start view shows a hive the player can shoot without moving,
-// and one in which a snipe is spawned in the start view, clear of hives and the player.
+// and one in which a snipe is spawned in the start view and, as it moves (2.4, WP 10), stays
+// for a while in a small area clear of everything else.
 
 const HITS = 20; // a hive withstands 19 hits; the 20th destroys it (2.3)
 const FIRE_KEYS: Record<string, string> = {
@@ -74,15 +82,15 @@ test.describe("2.3 Hives / 3 Presentation: hives are drawn in the colour of thei
 });
 
 test.describe("2.3 Hives / 3 Presentation: spawned snipes are drawn", () => {
-  test("a snipe spawned in view appears where the game put it", async ({
+  test("a snipe spawned in view appears where the game puts it", async ({
     page,
   }) => {
     test.setTimeout(60_000);
     const sight = snipeInSight();
     const errors = await open(page, `/?seed=${sight.seed}`);
     const floor = await floorPixel(page, CELL_PX);
-    // The snipe's cells are open, so before it is drawn they show only floor; once it is
-    // drawn, a good part of them show something else.
+    // The area the snipe covers while in sight is open, so before it is drawn it shows only
+    // floor; once it is drawn, a good part of the snipe's own cells show something else.
     const wait = (1000 * sight.tick) / TICKS_PER_SECOND + 5000;
     await expect
       .poll(
@@ -90,7 +98,7 @@ test.describe("2.3 Hives / 3 Presentation: spawned snipes are drawn", () => {
           (await pixelsIn(page, sight.snipe)).filter((p) => p !== floor).length,
         { timeout: wait },
       )
-      .toBeGreaterThan((sight.snipe.width * sight.snipe.height) / 16);
+      .toBeGreaterThan((SNIPE_W * SNIPE_H * CELL_PX * CELL_PX) / 16);
     expect(errors).toEqual([]);
   });
 });
