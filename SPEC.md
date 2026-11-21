@@ -1,6 +1,6 @@
 # Snipes Web — Specification
 
-Nov 21, 2026 · @Martin · Draft v0.12
+Nov 21, 2026 · @Martin · Draft v0.13
 
 - v0.2: sections 5 and 7 filled in from the HundAlder project's GitHub and publishing setup.
 - v0.3: CI, build and quality principles adopted from the MissingFiles project (5.2–5.7, 6.3–6.4, 9, 11).
@@ -13,6 +13,7 @@ Nov 21, 2026 · @Martin · Draft v0.12
 - v0.10: snipe movement, aim and accuracy from the original (2.4, 2.6, 2.7, 9.1, 10, 11).
 - v0.11: hives count like walls in a snipe's corner-gap test (2.4, 11).
 - v0.12: when the player dies within a tick, and what a safe respawn spot is (2.2, 2.4, 11).
+- v0.13: 16 px cells with smooth modern sprites, a bird-head player, and motion drawn sliding between cells; new WP 11b (3, 6.4, 9.1, 11).
 
 ## 1. Overview and goals
 
@@ -220,16 +221,19 @@ Source: the reverse-engineered Snipes source (section 10), `Snipes.h` and its sp
 
 ## 3. Presentation
 
-The game is drawn on a single HTML `<canvas>` in a retro text-mode style: a fixed character grid, a small palette, crisp pixels.
+The game is drawn on a single HTML `<canvas>` on a fixed character grid, with a small palette and smooth, modern sprites.
 
-- **Look:** inspired by the original's line-drawing characters and smiley figures, but with our own original glyphs/sprites. Monospace grid, dark background.
-- **Scaling:** the canvas scales in whole-number steps to fit the window, so pixels stay sharp. Minimum supported window: 1280×720.
+- **Look:** inspired by the original's line-drawing characters and smiley figures, but with our own original sprites, drawn as smooth vector shapes with soft (anti-aliased) edges in high resolution. Dark background.
+- **Scaling:** the canvas scales in whole-number steps to fit the window. Minimum supported window: 1280×720, where it is shown at ×1.
 - **HUD:** one status line with score, lives, level, hives left and snipes left.
 - **Screens:** title/options → playing → paused → level cleared → game over. Nothing else.
 - **Sound:** short beeps made with the Web Audio API (shot, hit, hive destroyed, death). Mute toggle with M. No audio files.
 - **Frame rate:** rendering at the display's refresh rate; game logic at a fixed tick rate (see 4.3).
-- **Size:** everything is drawn at the sizes in 2.10, one square character cell per grid cell, so the proportions match the original. The player is a modern take on a bird-like spacecraft with animated space guns in 8 directions. A snipe is a snipe character with a "spear" character pointing the way it moves. Walls are drawn as double solid lines. The player's guns point in the last firing direction.
-- **View:** 80 × 44 cells of the maze plus the HUD row, at 8 × 8 px per cell (640×360, shown at ×2 in a 1280×720 window). The player's footprint is centred in the view.
+- **Size:** everything is drawn at the sizes in 2.10, one square character cell per grid cell, so the proportions match the original. Walls are drawn as double solid lines.
+- **Player:** a bird head, as in the original (its 2 × 2 face of two eyes above a beak, ◄►), drawn over its 4 × 4 cells: two large eyes in the top half and a beak in the bottom half. The pupils look in the last firing direction (8 directions; straight ahead at the start), and the eyes blink now and then. It has no guns.
+- **Snipe:** a round face with a spear pointing the way it moves, over its 4 × 2 cells. **Hive:** a frame in its colour stage (2.3) with a flashing centre. **Shots:** small round glowing shots over their 2 × 2 cells.
+- **Motion:** the game logic moves in whole cells, but the screen shows smooth motion. Between two steps, the player and each snipe are drawn sliding at an even speed from the cell of their last step to their current cell, arriving when their next step is due. Shots, which move every tick, slide between their last two positions by the fraction of the tick that has passed. The view follows the player's drawn position, so it scrolls smoothly. A move across a maze edge slides the short way; a respawn or a new snipe appears in place without sliding.
+- **View:** 80 × 44 cells of the maze plus the HUD row, at 16 × 16 px per cell (1280×720, shown at ×1 in a 1280×720 window). The player's footprint is centred in the view.
 
 ## 4. Technical architecture
 
@@ -440,7 +444,7 @@ Rendering and audio are not unit-tested; they are covered by e2e smoke tests and
 - A new player can start a game and understand the controls without reading the README.
 - Movement and firing feel responsive at the target tick rate, with no visible stutter in a full game.
 - Every screen in section 3 can be reached and left by keyboard only.
-- The canvas scales sharply at 1280×720 and at the largest window size available, and nothing is cut off.
+- The canvas fits at 1280×720 and at the largest window size available, nothing is cut off, and moving snipes, the player and shots look smooth.
 - Sound and mute work, and nothing appears in the browser console during play.
 
 ## 7. Deployment and publishing
@@ -520,7 +524,7 @@ Version 1.0.0 is released with `/release` after M5.
 
 ### 9.1 Work packages
 
-The milestones split into 20 work packages. Each package is one branch, one pull request and roughly one Claude Code session, small enough to review in one sitting. Size: S ≈ half a day, M ≈ a day.
+The milestones split into 21 work packages. Each package is one branch, one pull request and roughly one Claude Code session, small enough to review in one sitting. Size: S ≈ half a day, M ≈ a day.
 
 | WP  | Milestone | Scope                                                                                                                                                                                                                                                                                                                                                                   | Tests written first                                                                                                                                                                                                                                                                              | Depends on | Size |
 | --- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- | ---- |
@@ -537,6 +541,7 @@ The milestones split into 20 work packages. Each package is one branch, one pull
 | 09  | M3        | Hives: placement, 20 hits with colour stages, continuous spawning under the enemy cap; hive count and enemy cap from the 2.6 digit table. Hives (with their colour stages) and spawned snipes are drawn; the page reads `?seed=N` (4.3)                                                                                                                                 | 19 hits survive, 20th destroys; spawning stops; cap never exceeded; hive and spawned footprints never cover a wall                                                                                                                                                                               | 08b        | M    |
 | 10  | M3        | Snipes: movement and firing as in 2.4 (accuracy by letter, 2.6), their shots, one-hit kill by the player's shot. Until WP 11, a snipe's shot that reaches the player disappears and touching does nothing                                                                                                                                                               | Snipe's footprint never covers a wall; step timing; keeps, turns and chooses directions as 2.4; fires only along its direction at an aligned player, never when s > 10; fixed PRNG draw order; hives block snipes; its shot damages hives and kills other enemies; one player shot kills a snipe | 09         | M    |
 | 11  | M3        | Player death (enemy, enemy bullet), lives, safe respawn                                                                                                                                                                                                                                                                                                                 | Simulation: standing still eventually dies; lives decrease by one                                                                                                                                                                                                                                | 10         | S    |
+| 11b | M4        | Presentation (3): 16 px cells (1280×720 at ×1); smooth vector sprites for the bird-head player (eyes look in the last firing direction, blinking), snipes, hives, shots and walls; motion drawn sliding between cells, and the view following the player's drawn position. Replaces the tests that assume 8 px cells and a ×2 scale                                     | Unit: the drawn position of a player, snipe or shot between steps and ticks (even slide, arrival at the next step, short way across edges, no slide on respawn or spawn); E2E: the canvas is 1280×720 at ×1; a moving snipe is drawn between cells; view still centred                           | 11         | M    |
 | 12  | M4        | Win condition, scoring table, level bonus, digit table: lives (hives and max enemies are WP 09)                                                                                                                                                                                                                                                                         | Cleared only when nothing hostile remains; points per event; snipe shots give no points; lives per digit                                                                                                                                                                                         | 11         | S    |
 | 13  | M4        | Screens (title with skill-level entry, pause, cleared, game over), HUD, high score per skill level                                                                                                                                                                                                                                                                      | E2E: start → game over → restart by keyboard; high score survives reload                                                                                                                                                                                                                         | 07, 12     | M    |
 | 14  | M4        | Web Audio beeps, M = mute                                                                                                                                                                                                                                                                                                                                               | E2E: mute toggles without errors                                                                                                                                                                                                                                                                 | 13         | S    |
@@ -606,6 +611,7 @@ Decisions are recorded here with their date when they are made, as in MissingFil
 | 2026-11-17 | Snipe details: walls and hives block snipes, snipes may overlap each other and the player; a fixed PRNG draw order for every chance; the order of events within a tick                                                                                                                                                                                                                                  | 2.4, 4.3, 9.1                                    |
 | 2026-11-21 | Hives count like walls in a snipe's corner-gap test                                                                                                                                                                                                                                                                                                                                                     | 2.4                                              |
 | 2026-11-21 | A safe respawn spot is a block start position with no hive in its block and no snipe or snipe shot in it or the 8 blocks around it, searched farthest from the death first; a player shot early in a tick does not move that tick; a touch counts after the player moves and after the snipes step                                                                                                      | 2.2, 2.4                                         |
+| 2026-11-21 | 16 px cells with smooth modern vector sprites; the player is a bird head whose eyes look in the last firing direction (no guns); motion is drawn sliding between cells while the logic stays in whole cells                                                                                                                                                                                             | 3, 6.4, 9.1                                      |
 
 ## Sources
 
