@@ -1,6 +1,6 @@
 # Snipes Web — Specification
 
-Nov 21, 2026 · @Martin · Draft v0.11
+Nov 21, 2026 · @Martin · Draft v0.12
 
 - v0.2: sections 5 and 7 filled in from the HundAlder project's GitHub and publishing setup.
 - v0.3: CI, build and quality principles adopted from the MissingFiles project (5.2–5.7, 6.3–6.4, 9, 11).
@@ -12,6 +12,7 @@ Nov 21, 2026 · @Martin · Draft v0.11
 - v0.9: optional `?seed=N` in the page URL; the 6.3 exception covers test setup that a new feature changes; WP 09 also draws hives and snipes (4.3, 6.3, 9.1, 11).
 - v0.10: snipe movement, aim and accuracy from the original (2.4, 2.6, 2.7, 9.1, 10, 11).
 - v0.11: hives count like walls in a snipe's corner-gap test (2.4, 11).
+- v0.12: when the player dies within a tick, and what a safe respawn spot is (2.2, 2.4, 11).
 
 ## 1. Overview and goals
 
@@ -58,7 +59,8 @@ The game is a grid-based maze shooter: clear every hive and every snipe on a lev
 
   Otherwise it stays put. Each of these is one normal step at the current speed, and neighbours are found with wrap-around. Staying put does not use up a step.
 
-- Has a limited number of lives, set by the digit (2.6). On death the player respawns at a safe spot after a short delay.
+- Has a limited number of lives, set by the digit (2.6). On death the player loses a life, is out of play (not drawn, cannot move, fire, be hit or touch anything) and respawns at a safe spot after a short delay.
+- **Safe spot:** a block's start position (2.10) whose block has no hive cell, where no snipe and no snipe shot overlaps that block or any of the 8 blocks around it (with wrap-around). The blocks are tried farthest from the block where the player died first (by the wrapped distance |Δcolumn| + |Δrow| in blocks; ties by row, then column). If no block qualifies, the player tries again on the next tick.
 - **Instant death** on touching an enemy, being hit by an enemy bullet, or touching a wall when deadly walls are on (see 2.6).
 - **Touching a wall** means that a held movement direction would take the player into a wall cell: a straight step into a wall, or a diagonal whose diagonal cell is a wall. With deadly walls on, this kills the player and no slide happens. Passing next to a wall is not touching it. _(verify)_
 
@@ -97,7 +99,7 @@ Ghosts appear only when the skill letter enables them (2.6). "Creep" in some des
 - **Firing:** after each step (also one where it stays put), measured from its new position, if the direction to the player equals the snipe's direction (for a diagonal, also |(|dx| − |dy|)| < 4) and s = ⌊D / 2^(accuracy + 1)⌋ is at most 10, it draws the fire chance, 1 / 2^(s + 1). Accuracy comes from the letter (2.6). On success it fires one shot in its direction, unless the shot's start position covers a wall, in which case nothing appears. Walls between it and the player don't stop it firing; they stop the shot.
 - **Its shot** is 2 × 2 and appears just outside its footprint in the firing direction: straight up or down over its middle two columns, straight left or right over its two rows, diagonally touching the matching corner. It moves one cell per tick like the player's and stops at the first wall or corner gap (2.5, 2.10). It never bounces. It kills the player (2.2), damages hives and kills snipes and ghosts (2.5).
 - **Hit by the player's shot:** a snipe dies from one hit (one cell of overlap, 2.10) and the shot disappears.
-- **Order within a tick** (4.3): shots move and hits are resolved; hives spawn; the player moves; snipes step and fire, in the order they appeared; the player fires. A shot first moves on the tick after it appears.
+- **Order within a tick** (4.3): shots move and hits are resolved; hives spawn; the player moves; snipes step and fire, in the order they appeared; the player fires. A shot first moves on the tick after it appears. A player hit by a shot in the first stage is out of play at once and does not move that tick. Touching a snipe is checked after the player moves and again after the snipes step; an overlap at either point kills the player, even if it is gone by the end of the tick.
 
 ### 2.5 Bullets
 
@@ -603,6 +605,7 @@ Decisions are recorded here with their date when they are made, as in MissingFil
 | 2026-11-17 | Snipes move, turn and fire as in the original: fire only along their direction at an aligned player, with a chance that falls with distance and rises with the letter's accuracy; walls don't stop them firing                                                                                                                                                                                          | 2.4, 2.6, 2.7, 9.1, 10                           |
 | 2026-11-17 | Snipe details: walls and hives block snipes, snipes may overlap each other and the player; a fixed PRNG draw order for every chance; the order of events within a tick                                                                                                                                                                                                                                  | 2.4, 4.3, 9.1                                    |
 | 2026-11-21 | Hives count like walls in a snipe's corner-gap test                                                                                                                                                                                                                                                                                                                                                     | 2.4                                              |
+| 2026-11-21 | A safe respawn spot is a block start position with no hive in its block and no snipe or snipe shot in it or the 8 blocks around it, searched farthest from the death first; a player shot early in a tick does not move that tick; a touch counts after the player moves and after the snipes step                                                                                                      | 2.2, 2.4                                         |
 
 ## Sources
 
