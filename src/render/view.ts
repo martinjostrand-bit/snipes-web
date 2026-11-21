@@ -70,7 +70,15 @@ export function drawGame(
     if (at) drawShot(ctx, at.x, at.y);
   }
   ctx.restore();
-  drawPlayer(ctx, PLAYER_COL * CELL_PX, (PLAYER_ROW + 1) * CELL_PX, state.aim);
+  // Spec 2.2: the player is not shown while it is out of play, between death and respawn.
+  if (state.respawn === 0) {
+    drawPlayer(
+      ctx,
+      PLAYER_COL * CELL_PX,
+      (PLAYER_ROW + 1) * CELL_PX,
+      state.aim,
+    );
+  }
 }
 
 // Where a footprint of `width` x `height` cells at `p` is drawn, in canvas pixels, or undefined

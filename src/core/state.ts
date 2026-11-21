@@ -1,14 +1,14 @@
-import type { Grid, Point } from "./grid";
+import { overlaps, wrap, type Box, type Grid, type Point } from "./grid";
 import { hitHives, hiveBox, placeHives, spawnSnipes, type Hive } from "./hives";
-import { generateMazeFrom, WALL_X, WALL_Y } from "./maze";
+import { BLOCK_H, BLOCK_W, generateMazeFrom, WALL_X, WALL_Y } from "./maze";
 import { movePlayer, playerBox, type Player } from "./player";
 import { createRng, type Rng } from "./rng";
-import { fireShot, moveShots, type Shot } from "./shots";
+import { fireShot, moveShots, shotBox, type Shot } from "./shots";
 import { accuracy, checkSkill, hiveCount, maxEnemies } from "./skill";
 import { snipeBox, stepSnipes, type Snipe } from "./snipes";
 
-// Spec 2.10: the player starts as near the middle of a block as it can, leaning up-left: its
-// footprint 5 open cells from the block's left wall and 3 from its top wall.
+// Spec 2.10: the player starts and respawns as near the middle of a block as it can, leaning
+// up-left: its footprint 5 open cells from the block's left wall and 3 from its top wall.
 const START_X = WALL_X + 1 + 5;
 const START_Y = WALL_Y + 1 + 3;
 
@@ -18,6 +18,12 @@ const DEFAULT_SKILL = "A1";
 
 // Spec 2.5: ticks from one shot to the next while a fire key is held.
 const FIRE_TICKS = 13;
+
+// Spec 2.2: the lives a game starts with, until the digit sets them (2.6, WP 12).
+const START_LIVES = 5;
+
+// Spec 2.2: the short delay, in ticks, from the player's death until it comes back.
+const RESPAWN_TICKS = 120;
 
 // Spec 2.2 and 2.8: the keys held this tick. y grows downwards, so up is moveY = -1 and
 // fireY = -1.
@@ -57,6 +63,10 @@ export interface GameState {
   readonly snipes: readonly Snipe[];
   /** Spec 2.4: the snipes' shots in flight. */
   readonly snipeShots: readonly Shot[];
+  /** Spec 2.2: the lives left, never below 0. */
+  readonly lives: number;
+  /** Spec 2.2: 0 while the player is in play; otherwise the ticks until it comes back. */
+  readonly respawn: number;
 }
 
 // Spec 2.3 and 2.6: a new game at a skill level such as "A1"; anything other than a letter
@@ -82,16 +92,19 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
     hives,
     snipes: [],
     snipeShots: [],
+    lives: START_LIVES,
+    respawn: 0,
   };
 }
 
 // Spec 2.2 to 2.5 and 4.3, in this order: the shots in flight move on, and each one that is
-// on a hive or snipe (fired onto it) or enters one hits it and disappears; a snipe's shot also
-// disappears when it reaches the player, who is unharmed until WP 11. The hives that are due
-// spawn their snipes, the player moves, and the snipes step and fire, in the order they
-// appeared. While a fire key is held a new shot appears next to the player, independent of
-// the way it moves, except while Space is held. A new shot stays where it appears until the
-// next tick. The guns turn to a held fire direction.
+// on a hive or snipe (fired onto it) or enters one hits it and disappears; a snipe's shot that
+// reaches the player in play kills it at once. The hives that are due spawn their snipes, the
+// player in play moves, and the snipes step and fire, in the order they appeared; a snipe that
+// touches the player in play after it moves or after the snipes step kills it. While a fire
+// key is held a new shot appears next to the player in play, independent of the way it moves,
+// except while Space is held. A new shot stays where it appears until the next tick. The guns
+// turn to a held fire direction.
 export function step(state: GameState, input: InputState): GameState {
   const { maze } = state;
   const aim =
@@ -104,7 +117,7 @@ export function step(state: GameState, input: InputState): GameState {
   const flying = moveShots(maze, state.shots, targets);
   const enemy = moveShots(maze, state.snipeShots, [
     ...targets,
-    playerBox(state.player),
+    ...(state.respawn === 0 ? [playerBox(state.player)] : []),
   ]);
   const hits = [...flying.hits, ...enemy.hits];
   const first = state.hives.length;
@@ -116,26 +129,43 @@ export function step(state: GameState, input: InputState): GameState {
     survivors,
     maxEnemies(state.skill),
   );
-  const player = movePlayer(maze, state.player, input);
+  const shotDown = enemy.hits.includes(targets.length);
+  const inPlay = state.respawn === 0 && !shotDown;
+  const moved = inPlay ? movePlayer(maze, state.player, input) : state.player;
+  const touches = (all: readonly Snipe[]) =>
+    inPlay && all.some((s) => overlaps(maze, snipeBox(s), playerBox(moved)));
+  const touchedFirst = touches(spawned.snipes);
   const { rng, snipes, shots } = stepSnipes(
     maze,
     spawned.rng,
     spawned.hives.map(hiveBox),
     spawned.snipes,
-    player,
+    moved,
     accuracy(state.skill),
   );
+  const snipeShots = [...enemy.shots, ...shots];
+  const life =
+    shotDown || touchedFirst || touches(snipes)
+      ? {
+          player: moved,
+          lives: Math.max(0, state.lives - 1),
+          respawn: RESPAWN_TICKS,
+        }
+      : comeBack(state, moved, spawned.hives, [
+          ...snipes.map(snipeBox),
+          ...snipeShots.map(shotBox),
+        ]);
   const shot =
-    state.reload > 0 || input.fast
+    life.respawn > 0 || state.reload > 0 || input.fast
       ? undefined
-      : fireShot(maze, playerBox(player), input.fireX, input.fireY);
+      : fireShot(maze, playerBox(life.player), input.fireX, input.fireY);
   const next = {
     ...state,
+    ...life,
     rng,
     hives: spawned.hives,
     snipes,
-    snipeShots: [...enemy.shots, ...shots],
-    player,
+    snipeShots,
     aim,
   };
   if (shot === undefined) {
@@ -146,4 +176,74 @@ export function step(state: GameState, input: InputState): GameState {
     };
   }
   return { ...next, shots: [...flying.shots, shot], reload: FIRE_TICKS - 1 };
+}
+
+// Spec 2.2 and 2.10: the player that was not killed this tick. In play it stays so. Out of
+// play it waits; when the wait is over it comes back at a safe spot, or waits one more tick
+// when there is none.
+function comeBack(
+  state: GameState,
+  player: Player,
+  hives: readonly Hive[],
+  dangers: readonly Box[],
+): Pick<GameState, "player" | "lives" | "respawn"> {
+  const { lives, respawn } = state;
+  if (respawn !== 1) {
+    return { player, lives, respawn: Math.max(0, respawn - 1) };
+  }
+  const at = safeSpot(state.maze, player, hives, dangers);
+  if (at === undefined) return { player, lives, respawn };
+  return { player: { ...at, wait: 0 }, lives, respawn: 0 };
+}
+
+// Spec 2.2 and 2.10: the start position of the safe block farthest from the block of `from`
+// (by |columns| + |rows| between them, with wrap-around; ties by row, then column), or
+// undefined when no block is safe. A block is safe when none of `hives` has a cell in it and
+// none of `dangers` has a cell in it or in the 8 blocks around it.
+function safeSpot(
+  maze: Grid,
+  from: Point,
+  hives: readonly Hive[],
+  dangers: readonly Box[],
+): Point | undefined {
+  const cols = maze.width / BLOCK_W;
+  const rows = maze.height / BLOCK_H;
+  const offset = wrap(maze, { x: from.x - WALL_X, y: from.y - WALL_Y });
+  const col = Math.floor(offset.x / BLOCK_W);
+  const row = Math.floor(offset.y / BLOCK_H);
+  const away = (a: number, b: number, size: number) =>
+    Math.min(Math.abs(a - b), size - Math.abs(a - b));
+  const blocks: { col: number; row: number; distance: number }[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      blocks.push({
+        col: c,
+        row: r,
+        distance: away(c, col, cols) + away(r, row, rows),
+      });
+    }
+  }
+  // The sort is stable, so blocks the same distance away stay in row, then column order.
+  blocks.sort((a, b) => b.distance - a.distance);
+  const safe = blocks.find(({ col: c, row: r }) => {
+    const block = {
+      x: WALL_X + c * BLOCK_W,
+      y: WALL_Y + r * BLOCK_H,
+      width: BLOCK_W,
+      height: BLOCK_H,
+    };
+    const around = {
+      x: block.x - BLOCK_W,
+      y: block.y - BLOCK_H,
+      width: 3 * BLOCK_W,
+      height: 3 * BLOCK_H,
+    };
+    return (
+      !hives.some((h) => overlaps(maze, hiveBox(h), block)) &&
+      !dangers.some((d) => overlaps(maze, d, around))
+    );
+  });
+  return (
+    safe && { x: START_X + safe.col * BLOCK_W, y: START_Y + safe.row * BLOCK_H }
+  );
 }
