@@ -984,6 +984,75 @@ describe("2.4 Snipes / 2.1 Maze: no diagonal step through a corner gap", () => {
       expect(drawsUsed(rng, after.rng)).toBe(1);
     }
   });
+
+  // Spec 2.4 (v0.11): for a snipe, a straight position on the way counts as blocked when it
+  // covers a wall or a hive cell. Each hive covers the same gap cell as one of the walls above,
+  // and no cell of the down-right position or of the snipe: hiveRight covers the cell just
+  // right of the snipe's top row, hiveDown the cell just below its left column.
+  const hiveRight = { x: p.x + SNIPE_W, y: p.y - HIVE + 1 };
+  const hiveDown = { x: p.x - HIVE + 1, y: p.y + SNIPE_H };
+  const [wallRight, wallDown] = gap;
+
+  it.each([
+    ["a hive and a wall", [hiveRight], [wallDown]],
+    ["a wall and a hive", [hiveDown], [wallRight]],
+    ["two hives", [hiveRight, hiveDown], []],
+  ] as const)(
+    "does not squeeze diagonally between %s",
+    (_name, hives, walls) => {
+      // The test's own checks: the hives cover the gap cells, not the snipe or its way.
+      const down = plus(field, p, DOWN_RIGHT);
+      for (const h of hives) {
+        expect(overlaps(field, hiveBox(h), snipeBox(p))).toBe(false);
+        expect(overlaps(field, hiveBox(h), snipeBox(down))).toBe(false);
+      }
+      const maze = grid(320, 320, walls);
+      for (const [turn, d] of [
+        [1, LEFT],
+        [-1, UP],
+      ] as const) {
+        const rng = rngIn(KEEPS, TOWARD);
+        const after = step(
+          arena({
+            maze,
+            player: far,
+            hives,
+            snipes: [snipe(p, DOWN_RIGHT, turn)],
+            rng,
+          }),
+          NO_INPUT,
+        );
+        // As between two walls: down-right is refused, both on keeping it and as the
+        // direction to the player, and so is the next try either way round.
+        expect(name(dirOf(after.snipes[0])), `sense ${turn}`).toBe(name(d));
+        expect(where(after.snipes[0])).toEqual(plus(maze, p, d));
+        expect(drawsUsed(rng, after.rng)).toBe(2);
+      }
+    },
+  );
+
+  it.each([
+    ["only the right one is blocked, by a hive", [hiveRight]],
+    ["only the lower one is blocked, by a hive", [hiveDown]],
+  ] as const)(
+    "steps diagonally past a hive when one straight position is open: %s",
+    (_name, hives) => {
+      const rng = rngIn(KEEPS);
+      const after = step(
+        arena({
+          maze: field,
+          player: far,
+          hives,
+          snipes: [snipe(p, DOWN_RIGHT)],
+          rng,
+        }),
+        NO_INPUT,
+      );
+      expect(where(after.snipes[0])).toEqual(plus(field, p, DOWN_RIGHT));
+      expect(dirOf(after.snipes[0])).toEqual(DOWN_RIGHT);
+      expect(drawsUsed(rng, after.rng)).toBe(1);
+    },
+  );
 });
 
 describe("2.4 Snipes: walls and hives block snipes; snipes may overlap each other and the player", () => {

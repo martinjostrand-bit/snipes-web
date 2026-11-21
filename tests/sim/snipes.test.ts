@@ -17,7 +17,8 @@ import {
 //
 // - Every step of a snipe is checked against the test's own model of 2.4: where it goes, the
 //   direction it ends with, the PRNG draws it uses (one `nextFloat` each, in the order 2.4
-//   gives, nothing else), the shot it fires and when it steps next.
+//   gives, nothing else), the shot it fires and when it steps next. Hives count like walls
+//   in the corner-gap test for a snipe (2.4, spec v0.11).
 // - In whole games, every tick: no cell covered by a snipe or a snipe's shot is a wall, no
 //   snipe covers a hive, the enemies stay within the digit's maximum, and every snipe shot
 //   either moved one cell along its line or has just been fired by a snipe (6.2).
@@ -215,11 +216,6 @@ function toward(maze: Grid, from: Point, player: Point) {
   return { d, dx, dy };
 }
 
-// How the straight positions on the way of a diagonal step are tested for a corner gap:
-// for walls only, or for walls and hives. 2.4 and 2.10 do not say whether a hive counts
-// there, so cases where the two differ are left out.
-type GapRule = "walls" | "walls and hives";
-
 function snipeOpen(maze: Grid, hives: readonly Point[], p: Point): boolean {
   const box = snipeBox(p);
   return (
@@ -227,22 +223,38 @@ function snipeOpen(maze: Grid, hives: readonly Point[], p: Point): boolean {
   );
 }
 
+// Spec 2.4 (v0.11): a step is open for a snipe when its footprint there covers no wall and
+// no hive cell and it is not a diagonal through a corner gap. For a snipe, a straight position
+// on the way of a diagonal counts as blocked when it covers a wall or a hive cell, so it cannot
+// squeeze between a hive and a wall or between two hives.
 function canStep(
   maze: Grid,
   hives: readonly Point[],
   p: Point,
   d: Dir,
-  rule: GapRule,
 ): boolean {
   const to = { x: p.x + d[0], y: p.y + d[1] };
   if (!snipeOpen(maze, hives, to)) return false;
   if (!diagonal(d)) return true;
   const across = { x: to.x, y: p.y };
   const down = { x: p.x, y: to.y };
-  if (rule === "walls") {
-    return clear(maze, snipeBox(across)) || clear(maze, snipeBox(down));
-  }
   return snipeOpen(maze, hives, across) || snipeOpen(maze, hives, down);
+}
+
+// Whether a diagonal step is refused only because a hive blocks a straight position on the
+// way: with walls alone it would be allowed.
+function hiveGap(
+  maze: Grid,
+  hives: readonly Point[],
+  p: Point,
+  d: Dir,
+): boolean {
+  const to = { x: p.x + d[0], y: p.y + d[1] };
+  if (!diagonal(d) || !snipeOpen(maze, hives, to)) return false;
+  if (canStep(maze, hives, p, d)) return false;
+  const across = { x: to.x, y: p.y };
+  const down = { x: p.x, y: to.y };
+  return clear(maze, snipeBox(across)) || clear(maze, snipeBox(down));
 }
 
 interface Prediction {
@@ -263,7 +275,6 @@ function predict(
   rng: Rng,
   accuracy: number,
   randomList: readonly Dir[],
-  rule: GapRule,
 ): Prediction {
   const vs = values(rng, 8);
   let n = 0;
@@ -272,8 +283,14 @@ function predict(
   const from = { x: snipe.x, y: snipe.y };
   let dir = dirOf(snipe);
   let moved = false;
+  const tried = (c: Dir): boolean => {
+    if (hiveGap(maze, hives, from, c) && !kind.includes("hive gap")) {
+      kind.push("hive gap");
+    }
+    return canStep(maze, hives, from, c);
+  };
   if (draw() < KEEP) {
-    if (canStep(maze, hives, from, dir, rule)) {
+    if (tried(dir)) {
       moved = true;
       kind.push("kept");
     } else {
@@ -291,7 +308,7 @@ function predict(
     }
     for (let k = 0; k < 8; k++) {
       dir = rotate(d, k * snipe.turn);
-      if (canStep(maze, hives, from, dir, rule)) {
+      if (tried(dir)) {
         moved = true;
         if (k > 0) kind.push("turned");
         break;
@@ -447,6 +464,47 @@ function randomSpot(
   return undefined;
 }
 
+// For a snipe at `p` going diagonally d, two hives: one on the cell that only the horizontal
+// straight position on the way covers, the other on the cell that only the vertical one
+// covers, neither on the snipe nor on the diagonal position (2.4, 2.10). Not wrapped.
+function gapHives(p: Point, [dx, dy]: Dir): Point[] {
+  const across = {
+    x: dx > 0 ? p.x + SNIPE_W : p.x - 1,
+    y: dy > 0 ? p.y : p.y + SNIPE_H - 1,
+  };
+  const down = {
+    x: dx > 0 ? p.x : p.x + SNIPE_W - 1,
+    y: dy > 0 ? p.y + SNIPE_H : p.y - 1,
+  };
+  return [
+    {
+      x: dx > 0 ? across.x : across.x - HIVE + 1,
+      y: dy > 0 ? across.y - HIVE + 1 : across.y,
+    },
+    {
+      x: dx > 0 ? down.x - HIVE + 1 : down.x,
+      y: dy > 0 ? down.y : down.y - HIVE + 1,
+    },
+  ];
+}
+
+// An open spot for a snipe within a cell or two of the hive at `h`, or undefined.
+function nearSpot(
+  draw: (n: number) => number,
+  maze: Grid,
+  h: Point,
+  ok: (p: Point) => boolean,
+): Point | undefined {
+  for (let tries = 0; tries < 100; tries++) {
+    const p = wrapped(maze, {
+      x: h.x - SNIPE_W - 1 + draw(HIVE + SNIPE_W + 3),
+      y: h.y - SNIPE_H - 1 + draw(HIVE + SNIPE_H + 3),
+    });
+    if (ok(p)) return p;
+  }
+  return undefined;
+}
+
 // ===========================================================================================
 
 describe("2.4 Snipes: every step follows the rules, in rough grids with hives", () => {
@@ -474,8 +532,30 @@ describe("2.4 Snipes: every step follows the rules, in rough grids with hives", 
           const p = randomSpot(draw, maze, (q) => clear(maze, hiveBox(q)));
           if (p) hives.push(p);
         }
-        const at = randomSpot(draw, maze, (q) => snipeOpen(maze, hives, q));
+        // Half the time the snipe starts next to a hive, where the hive can block the way of
+        // a diagonal step (2.4).
+        const by = hives.length > 0 && draw(2) === 0 ? hives[0] : undefined;
+        const at =
+          by === undefined
+            ? randomSpot(draw, maze, (q) => snipeOpen(maze, hives, q))
+            : nearSpot(draw, maze, by, (q) => snipeOpen(maze, hives, q));
         if (!at) continue;
+        // A third of the time hives are put on the way of a diagonal step, where they can make
+        // a corner gap with each other or with a wall, and the snipe heads that way.
+        let heading = CLOCKWISE[draw(8)];
+        if (draw(3) === 0) {
+          heading = CLOCKWISE[1 + 2 * draw(4)];
+          for (const h of gapHives(at, heading)) {
+            if (
+              draw(3) > 0 &&
+              clear(maze, hiveBox(h)) &&
+              !overlaps(maze, hiveBox(h), snipeBox(at)) &&
+              hives.every((o) => !overlaps(maze, hiveBox(h), hiveBox(o)))
+            ) {
+              hives.push(wrapped(maze, h));
+            }
+          }
+        }
         const player = randomSpot(
           draw,
           maze,
@@ -484,21 +564,10 @@ describe("2.4 Snipes: every step follows the rules, in rough grids with hives", 
         );
         if (!player) continue;
         const letter = LETTERS[draw(26)];
-        const s = snipe(at, CLOCKWISE[draw(8)], draw(2) === 0 ? 1 : -1);
+        const s = snipe(at, heading, draw(2) === 0 ? 1 : -1);
         const rng = createRng(draw(2 ** 30));
         const accuracy = ACCURACY[LETTERS.indexOf(letter)];
-        const a = predict(maze, hives, player, s, rng, accuracy, list, "walls");
-        const b = predict(
-          maze,
-          hives,
-          player,
-          s,
-          rng,
-          accuracy,
-          list,
-          "walls and hives",
-        );
-        if (JSON.stringify(a) !== JSON.stringify(b)) continue;
+        const a = predict(maze, hives, player, s, rng, accuracy, list);
 
         const state = arena(maze, player, [s], hives, `${letter}1`, rng);
         const after = step(state, NO_INPUT);
@@ -565,6 +634,7 @@ describe("2.4 Snipes: every step follows the rules, in rough grids with hives", 
         "too far",
         "start on a wall",
         "off the diagonal",
+        "hive gap",
       ]) {
         expect(kinds.get(k) ?? 0, k).toBeGreaterThan(2);
       }
