@@ -144,11 +144,13 @@ function spawnFor(player: Point, dx: number, dy: number): Point {
 
 // A hive the shot appearing at `spawn` and going (dx, dy) enters on its first move, by the
 // cell of its footprint that leads; the shot's starting cells are not on the hive. Between
-// the hive and the player there is only the 2-cell-wide place where the shot appears.
-function hiveAhead(spawn: Point, dx: number, dy: number): Point {
+// the hive and the player there is only the 2-cell-wide place where the shot appears. With a
+// `gap`, the hive is that many cells further along the shot's line, and the shot enters it
+// on move gap + 1.
+function hiveAhead(spawn: Point, dx: number, dy: number, gap = 0): Point {
   const lead = {
-    x: spawn.x + dx + (dx > 0 ? 1 : 0),
-    y: spawn.y + dy + (dy > 0 ? 1 : 0),
+    x: spawn.x + (gap + 1) * dx + (dx > 0 ? 1 : 0),
+    y: spawn.y + (gap + 1) * dy + (dy > 0 ? 1 : 0),
   };
   return {
     x: dx < 0 ? lead.x - HIVE + 1 : lead.x,
@@ -406,13 +408,15 @@ describe("2.3 Hives: placed at random open spots when the game starts (2.10, 6.2
 });
 
 describe("2.3 Hives: withstand 19 hits, the 20th destroys the hive (2.5, 6.2)", () => {
-  // The player stands still and holds a fire key. The hive is right beyond the place where
-  // the shot appears, so every shot hits it on its first move, until it is destroyed.
+  // The player stands still and holds a fire key. The hive is a few cells beyond the place
+  // where the shot appears, so every shot hits it within a few moves, until it is destroyed.
+  // The gap is as wide as a snipe, so that no snipe the hive spawns lands on the player, which
+  // would kill it (WP 11).
   it.each(DIRECTIONS)(
     "fired at %s, it survives 19 hits and is destroyed by the 20th",
     (_name, dx, dy) => {
       const spawn = spawnFor(centre, dx, dy);
-      const at = hiveAhead(spawn, dx, dy);
+      const at = hiveAhead(spawn, dx, dy, SNIPE_W);
       // The test's own checks: the hive is open, off the player and off the shot's start.
       expect(clear(room, hiveBox(at))).toBe(true);
       expect(overlaps(room, hiveBox(at), playerBox(centre))).toBe(false);
@@ -433,8 +437,8 @@ describe("2.3 Hives: withstand 19 hits, the 20th destroys the hive (2.5, 6.2)", 
           );
           continue;
         }
-        // Until the hive is destroyed, every shot appears where 2.10 says and hits on its
-        // first move, so at most one is in flight.
+        // Until the hive is destroyed, every shot appears where 2.10 says and hits within a
+        // few moves, long before the next is fired, so at most one is in flight.
         expect(state.shots.length, `tick ${tick}`).toBeLessThanOrEqual(1);
         if (firedThisTick(before, state)) {
           fired++;
@@ -729,10 +733,22 @@ describe("2.3 Hives: a destroyed hive stops spawning; the snipes it spawned stay
     "spawns no more after the 20th hit, while an undamaged twin keeps spawning",
     () => {
       const interval = spawnInterval();
-      const spawn = spawnFor(centre, 1, 0);
-      const at = hiveAhead(spawn, 1, 0);
+      // The player fires up through a hole in a wall across the room, just as wide as its
+      // shot, at the hive right beyond the wall. The snipes the hive spawns, 4 cells wide,
+      // cannot come through the hole to the player, which touching would kill (WP 11).
+      const spawn = spawnFor(centre, 0, -1);
+      const wallRow = spawn.y - 1;
+      const walled = createGrid(64, 48, ({ x, y }) =>
+        x === 0 ||
+        y === 0 ||
+        (y === wallRow && (x < spawn.x || x > spawn.x + SHOT - 1))
+          ? "wall"
+          : "open",
+      );
+      const at = { x: spawn.x, y: wallRow - HIVE };
+      expect(clear(walled, hiveBox(at))).toBe(true);
       // Digit 9 allows 150 enemies, so the map is never full here.
-      let state = until(arena(room, centre, [at], "A9"), 2);
+      let state = until(arena(walled, centre, [at], "A9"), 2);
       expect(state.snipes.length).toBeGreaterThanOrEqual(2);
       let twin = state;
 
@@ -741,7 +757,7 @@ describe("2.3 Hives: a destroyed hive stops spawning; the snipes it spawned stay
       let destroyedAt = -1;
       for (let tick = 0; tick < (HITS + 40) * FIRE_TICKS; tick++) {
         const before = state;
-        state = calm(state, fire(1, 0));
+        state = calm(state, fire(0, -1));
         twin = calm(twin, NO_INPUT);
         if (before.hives.length === 1 && state.hives.length === 0) {
           destroyedAt = tick;
@@ -798,7 +814,8 @@ describe("2.3 Hives: a destroyed hive stops spawning; the snipes it spawned stay
 
 describe("2.3 Hives / 2.10 Sizes: a spawned snipe's footprint never covers a wall (6.2)", () => {
   // Hives in tight places, some across the edges of the grid. Every snipe on the map is
-  // checked on every tick.
+  // checked on every tick. The player is in a pocket of its own, walled off from the snipes
+  // and their shots, which would kill it (WP 11).
   function check(
     name: string,
     maze: Grid,
@@ -831,11 +848,13 @@ describe("2.3 Hives / 2.10 Sizes: a spawned snipe's footprint never covers a wal
   it(
     "in a corridor exactly 4 cells wide, across the bottom edge",
     () => {
-      const maze = createGrid(40, 30, ({ x }) =>
-        x >= 10 && x <= 13 ? "open" : "wall",
+      const maze = createGrid(40, 30, ({ x, y }) =>
+        (x >= 10 && x <= 13) || (x >= 30 && x <= 33 && y >= 10 && y <= 13)
+          ? "open"
+          : "wall",
       );
       expect(
-        check("vertical", maze, { x: 10, y: 10 }, [{ x: 10, y: 28 }]),
+        check("vertical", maze, { x: 30, y: 10 }, [{ x: 10, y: 28 }]),
       ).toBeGreaterThan(0);
     },
     SLOW,
@@ -844,11 +863,13 @@ describe("2.3 Hives / 2.10 Sizes: a spawned snipe's footprint never covers a wal
   it(
     "in a corridor exactly 4 cells high, across the right edge",
     () => {
-      const maze = createGrid(40, 30, ({ y }) =>
-        y >= 5 && y <= 8 ? "open" : "wall",
+      const maze = createGrid(40, 30, ({ x, y }) =>
+        (y >= 5 && y <= 8) || (x >= 15 && x <= 18 && y >= 20 && y <= 23)
+          ? "open"
+          : "wall",
       );
       expect(
-        check("horizontal", maze, { x: 15, y: 5 }, [{ x: 38, y: 5 }]),
+        check("horizontal", maze, { x: 15, y: 20 }, [{ x: 38, y: 5 }]),
       ).toBeGreaterThan(0);
     },
     SLOW,
@@ -880,24 +901,35 @@ describe("2.3 Hives / 2.10 Sizes: a spawned snipe's footprint never covers a wal
           rng = next;
           return Math.floor(value * n);
         };
-        const maze = createGrid(48, 40, () =>
-          draw(8) === 0 ? "wall" : "open",
-        );
-        // The open spots for the player and three hives, none sharing a cell.
+        // The player's pocket, 4 x 4 open cells in the middle of a walled-off corner.
+        const corner: Box = { x: 40, y: 32, width: 8, height: 8 };
+        const pocket: Box = { x: 42, y: 34, width: PLAYER, height: PLAYER };
+        const within = (b: Box, p: Point): boolean =>
+          p.x >= b.x &&
+          p.x < b.x + b.width &&
+          p.y >= b.y &&
+          p.y < b.y + b.height;
+        const maze = createGrid(48, 40, (p) => {
+          const cell = draw(8) === 0 ? "wall" : "open";
+          if (!within(corner, p)) return cell;
+          return within(pocket, p) ? "open" : "wall";
+        });
+        // The open spots for three hives, none sharing a cell, outside the corner.
         const spots: Point[] = [];
-        for (let y = 0; y < maze.height && spots.length < 4; y++) {
-          for (let x = 0; x < maze.width && spots.length < 4; x++) {
+        for (let y = 0; y < maze.height && spots.length < 3; y++) {
+          for (let x = 0; x < maze.width && spots.length < 3; x++) {
             const p = { x, y };
             if (
               clear(maze, hiveBox(p)) &&
+              !overlaps(maze, hiveBox(p), corner) &&
               spots.every((q) => !overlaps(maze, hiveBox(p), hiveBox(q)))
             ) {
               spots.push(p);
             }
           }
         }
-        expect(spots, `seed ${seed}`).toHaveLength(4);
-        spawned += check(`rough ${seed}`, maze, spots[0], spots.slice(1));
+        expect(spots, `seed ${seed}`).toHaveLength(3);
+        spawned += check(`rough ${seed}`, maze, pocket, spots);
       }
       expect(spawned).toBeGreaterThan(0);
     },

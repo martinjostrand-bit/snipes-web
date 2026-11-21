@@ -249,7 +249,12 @@ describe("2.2 Player: steps exactly on the ticks the speed rule allows (4.3)", (
   it.each(SEEDS)(
     "in a generated maze, keys pressed and released at random (seed %d)",
     (seed) => {
-      const report = checkSteps(createGame(seed), seed);
+      // Without hives or snipes, which would kill the player and move it to a new place
+      // (WP 11).
+      const report = checkSteps(
+        { ...createGame(seed), hives: [], snipes: [] },
+        seed,
+      );
       expect(report.problems).toEqual([]);
       // Guards: the player got around, at both speeds, and the wait and walls both held it.
       expect(report.moves).toBeGreaterThan(200);
@@ -266,7 +271,13 @@ describe("2.2 Player: steps exactly on the ticks the speed rule allows (4.3)", (
       const maze = roughGrid(seed, 60, 45);
       const start = roomiest(maze);
       const report = checkSteps(
-        { ...game, maze, player: { ...game.player, x: start.x, y: start.y } },
+        {
+          ...game,
+          maze,
+          player: { ...game.player, x: start.x, y: start.y },
+          hives: [],
+          snipes: [],
+        },
         seed + 1,
       );
       expect(report.problems).toEqual([]);

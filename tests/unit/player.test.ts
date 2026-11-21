@@ -74,9 +74,16 @@ function fits(maze: Grid, p: Point): boolean {
   return footprint(p).every((c) => cellAt(maze, c) === "open");
 }
 
+// The player alone in `maze`: no hives or snipes, which would kill it (WP 11).
 function place(maze: Grid, at: Point): GameState {
   const game = createGame(1);
-  return { ...game, maze, player: { ...game.player, x: at.x, y: at.y } };
+  return {
+    ...game,
+    maze,
+    player: { ...game.player, x: at.x, y: at.y },
+    hives: [],
+    snipes: [],
+  };
 }
 
 function at(state: GameState): Point {
