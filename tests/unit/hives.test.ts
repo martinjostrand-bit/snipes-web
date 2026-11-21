@@ -304,14 +304,19 @@ describe("2.3 Hives / 2.6 Skill level: the digit sets how many hives there are",
     }
   });
 
-  it("does not depend on the letter for the same seed", () => {
-    for (const digit of DIGITS) {
-      const counts = LETTERS.map(
-        (letter) => createGame(5, `${letter}${digit}`).hives.length,
-      );
-      expect(new Set(counts)).toEqual(new Set([HIVES[digit - 1]]));
-    }
-  });
+  // 234 new games, which take more than the default 5 s when the whole suite runs at once.
+  it(
+    "does not depend on the letter for the same seed",
+    () => {
+      for (const digit of DIGITS) {
+        const counts = LETTERS.map(
+          (letter) => createGame(5, `${letter}${digit}`).hives.length,
+        );
+        expect(new Set(counts)).toEqual(new Set([HIVES[digit - 1]]));
+      }
+    },
+    SLOW,
+  );
 });
 
 describe("2.3 Hives: placed at random open spots when the game starts (2.10, 6.2)", () => {

@@ -17,14 +17,23 @@ import {
 //   exactly one with each death and never below 0. How many a game starts with is the digit's
 //   (2.6, WP 12), so here it is only checked to be above 0.
 // - `state.respawn` is 0 while the player is in play. From the tick it dies until it comes back
-//   it is above 0 (a whole number of ticks); then the player is out of play: nothing hurts it
-//   and it fires no shot. On the tick it comes back, `respawn` is 0 again and `state.player` is
-//   where it came back.
-// - Touching (2.2, 2.10): the player's 4 x 4 footprint and a snipe's 4 x 2 footprint share a
-//   cell at the end of a tick. Being next to each other is not touching.
+//   it is above 0 (a whole number of ticks); then the player is out of play: it cannot move,
+//   fire, be hit or touch anything, so `state.player` stays where it died. On the tick it comes
+//   back, `respawn` is 0 again and `state.player` is where it came back.
+// - Touching (2.2, 2.4, 2.10): the player's 4 x 4 footprint and a snipe's 4 x 2 footprint share
+//   a cell after the player moves or after the snipes step, even if not at the end of the tick.
+//   Being next to each other is not touching.
 // - Hit (2.2, 2.4, 2.5): a snipe's shot (`state.snipeShots`, 2 x 2) enters a cell of the
 //   player's footprint, or was fired onto it; that shot disappears. Shots move and hits are
-//   resolved first in a tick, so a shot fired onto the player hits on the next tick (4.3).
+//   resolved first in a tick, so a shot fired onto the player hits on the next tick, and a
+//   player that is hit does not move that tick (4.3).
+// - Safe spot (2.2, spec v0.12): the start position (2.10) of a block with no hive cell, where no
+//   snipe and no snipe shot is in that block or the 8 around it. A block is 16 x 12 cells: 15 x
+//   11 open ones with the wall line on its left and top. The blocks are tried farthest first
+//   from the block where the player died, by |columns| + |rows| between them with wrap-around,
+//   ties by row, then column; with none safe it tries again on the next tick. Blocks are
+//   counted here from the block of the start; the tests keep to blocks whose order by row and
+//   column does not depend on which block of the maze counts as the first.
 // - Nothing else kills the player in WP 11: not its own straight shots (bouncing shots are
 //   WP 16, deadly walls WP 17, ghosts WP 15).
 // - What follows the loss of the last life (game over) is WP 13's; here the lives only never go
@@ -51,6 +60,8 @@ const SNIPE_W = 4; // a snipe's footprint is SNIPE_W x SNIPE_H cells (2.10)
 const SNIPE_H = 2;
 const BLOCK_W = 16; // the maze's blocks are BLOCK_W x BLOCK_H cells (2.10)
 const BLOCK_H = 12;
+const BLOCKS_X = 16; // the maze is BLOCKS_X x BLOCKS_Y blocks (2.10)
+const BLOCKS_Y = 20;
 const KEEP = 3 / 4; // the keep chance (2.4)
 const FIRE_TICKS = 13; // ticks from one player's shot to the next (2.5)
 const SHORT = 10 * 60; // ten seconds of ticks: the longest a "short delay" (2.2) may be
@@ -230,6 +241,29 @@ function quietGame(seed: number): GameState {
   return { ...createGame(seed), hives: [], snipes: [] };
 }
 
+// Spec 2.10: the start position of the block `bx` columns right of and `by` rows below the
+// block whose start position is `from`, wrapped.
+function blockStart(maze: Grid, from: Point, bx: number, by: number): Point {
+  return {
+    x: mod(from.x + bx * BLOCK_W, maze.width),
+    y: mod(from.y + by * BLOCK_H, maze.height),
+  };
+}
+
+// Which block start position `p` is, counted from the block of start position `from`, as
+// "column,row"; undefined if `p` is not a block's start position.
+function blockOf(maze: Grid, from: Point, p: Point): string | undefined {
+  const dx = mod(p.x - from.x, maze.width);
+  const dy = mod(p.y - from.y, maze.height);
+  if (dx % BLOCK_W !== 0 || dy % BLOCK_H !== 0) return undefined;
+  return `${dx / BLOCK_W},${dy / BLOCK_H}`;
+}
+
+// A hive like a new game's at `p`, with no hits taken.
+function hiveAt(p: Point): GameState["hives"][number] {
+  return { ...createGame(1).hives[0], x: p.x, y: p.y, hits: 0 };
+}
+
 function hold(fireX: Axis, fireY: Axis, moveX: Axis = 0, moveY: Axis = 0) {
   return { ...NO_INPUT, fireX, fireY, moveX, moveY };
 }
@@ -298,8 +332,9 @@ function untilBack(
   return undefined;
 }
 
-// An open field, larger than any shot flies in these tests, with the player in its middle.
-const field = grid(320, 320);
+// An open field the size of the maze (2.10), larger than any shot flies in these tests, with
+// the player in its middle.
+const field = grid(BLOCKS_X * BLOCK_W, BLOCKS_Y * BLOCK_H);
 const P = { x: 150, y: 150 };
 
 // ===========================================================================================
@@ -388,6 +423,28 @@ describe("2.2 Player / 2.4 Snipes: instant death on being hit by a snipe's shot 
     expect(state.snipeShots).toEqual([]);
   });
 
+  it("does not move on the tick a shot hits it, nor while it is out of play", () => {
+    // Holding right all along; the shot enters its footprint on its first move, before the
+    // player moves (4.3).
+    let state = arena({
+      maze: field,
+      player: P,
+      snipeShots: [shot({ x: P.x - SHOT, y: P.y + 1 }, RIGHT)],
+    });
+    const lives = state.lives;
+    const right = hold(0, 0, 1, 0);
+    state = step(state, right);
+    expect(state.lives).toBe(lives - 1);
+    expect(state.respawn).toBeGreaterThan(0);
+    expect(where(state.player)).toEqual(P);
+    for (let tick = 2; tick <= SHORT && state.respawn > 0; tick++) {
+      state = step(state, right);
+      if (state.respawn > 0) {
+        expect(where(state.player), `tick ${tick}`).toEqual(P);
+      }
+    }
+  });
+
   it.each([
     ["right, over the player's top row", { x: P.x - 12, y: P.y - 1 }, RIGHT],
     ["right, over its bottom row", { x: P.x - 12, y: P.y + PLAYER - 1 }, RIGHT],
@@ -448,7 +505,7 @@ describe("2.2 Player / 2.4 Snipes: instant death on being hit by a snipe's shot 
 
   it("is not hurt by a shot that a wall stops before it", () => {
     // A wall column 4 cells left of the player, between it and the shot.
-    const walled = grid(320, 320, ({ x }) => x === P.x - 4);
+    const walled = grid(field.width, field.height, ({ x }) => x === P.x - 4);
     let state = arena({
       maze: walled,
       player: P,
@@ -534,6 +591,28 @@ describe("2.2 Player / 2.10 Sizes: instant death on touching a snipe", () => {
     state = step(state, right);
     expect(state.lives).toBe(lives - 1);
     expect(state.respawn).toBeGreaterThan(0);
+  });
+
+  it("is killed by a snipe it steps onto, even when the snipe steps off it in the same tick", () => {
+    // Right next to the player, the snipe keeps going right. The player steps right onto it,
+    // then the snipe steps on, off the player: touching is checked after the player moves too.
+    const state = arena({
+      maze: field,
+      player: P,
+      snipes: [snipe({ x: P.x + PLAYER, y: P.y + 1 }, RIGHT)],
+      rng: rngIn(KEEPS),
+    });
+    const after = step(state, hold(0, 0, 1, 0));
+    expect(where(after.snipes[0])).toEqual({ x: P.x + PLAYER + 1, y: P.y + 1 });
+    expect(
+      overlaps(
+        field,
+        snipeBox(after.snipes[0]),
+        playerBox({ x: P.x + 1, y: P.y }),
+      ),
+    ).toBe(false);
+    expect(after.lives).toBe(state.lives - 1);
+    expect(after.respawn).toBeGreaterThan(0);
   });
 
   // Snipes right next to the player on each side and at each corner, going away from it.
@@ -680,9 +759,10 @@ describe("2.2 Player / 2.10 Sizes: comes back at a safe spot after a short delay
   });
 
   it.each([1, 2, 3, 42])(
-    "comes back as near the middle of a block as it starts, on open cells (seed %d)",
+    "comes back at the start position of the block farthest from where it died (seed %d)",
     (seed) => {
-      // It walks 3 cells right first, so that it dies away from the middle of its block.
+      // It walks 3 cells right first, so that it dies away from its block's start position.
+      // The farthest block is 8 columns and 10 rows away, half the maze round both ways.
       let state: GameState = quietGame(seed);
       const start = where(state.player);
       for (let tick = 0; tick < 9; tick++)
@@ -697,11 +777,79 @@ describe("2.2 Player / 2.10 Sizes: comes back at a safe spot after a short delay
       const back = untilBack(death.dead);
       expect(back).toBeDefined();
       if (back === undefined) return;
-      const p = back.back.player;
-      // 2.10: 5 cells from its block's left wall and 3 from its top wall, as at the start.
-      expect(mod(p.x - start.x, BLOCK_W)).toBe(0);
-      expect(mod(p.y - start.y, BLOCK_H)).toBe(0);
+      const p = where(back.back.player);
+      expect(p).toEqual(blockStart(state.maze, start, 8, 10));
       expect(clear(back.back.maze, playerBox(p))).toBe(true);
+    },
+  );
+
+  it("comes back farthest from the block where it died, wherever that is", () => {
+    // Killed on the start position of the block 3 columns right of and 5 rows below the start.
+    const game = quietGame(5);
+    const start = where(game.player);
+    const there = blockStart(game.maze, start, 3, 5);
+    const death = untilDeath(
+      {
+        ...game,
+        player: { ...game.player, ...there },
+        snipeShots: [shotFromLeft(there)],
+      },
+      5,
+    );
+    expect(death).toBeDefined();
+    if (death === undefined) return;
+    const back = untilBack(death.dead);
+    expect(back).toBeDefined();
+    expect(where(back?.back.player ?? there)).toEqual(
+      blockStart(game.maze, start, 3 + 8, 5 + 10),
+    );
+  });
+
+  // From the start block, the farthest block is (8, 10) in columns and rows counted from it.
+  // Next, 17 blocks away, come (8, 9), (7, 10), (9, 10) and (8, 11), in that order: by row,
+  // then column. The player dies at once on 10 snipes that stand on its start position; with
+  // as many enemies as A1 allows, no hive spawns (2.3). The snipes and snipe shots are put back
+  // where they were, and new shots removed, after every tick.
+  it.each<[string, string, number[][], number[][], number[][]]>([
+    ["nothing else", "8,10", [], [], []],
+    ["a hive in the farthest block", "8,9", [[8, 10]], [], []],
+    ["a snipe two rows above the farthest block", "8,10", [], [[8, 8]], []],
+    ["a snipe in a block next to the farthest", "8,9", [], [[9, 11]], []],
+    ["a snipe shot in a block next to the farthest", "8,9", [], [], [[8, 11]]],
+    [
+      "a hive in the farthest block and a snipe next to the next one",
+      "7,10",
+      [[8, 10]],
+      [[8, 8]],
+      [],
+    ],
+  ])(
+    "with %s, it comes back in block %s",
+    (_name, want, hiveBlocks, snipeBlocks, shotBlocks) => {
+      const game = quietGame(1);
+      const { maze } = game;
+      const start = where(game.player);
+      const at = ([bx, by]: number[]): Point => blockStart(maze, start, bx, by);
+      const snipes = [
+        ...Array.from({ length: 10 }, () => snipe(start, UP)),
+        ...snipeBlocks.map((b) => snipe(at(b), UP)),
+      ];
+      const shots = shotBlocks.map((b) => {
+        const p = at(b);
+        return shot({ x: p.x + 1, y: p.y + 1 }, RIGHT);
+      });
+      const reset = (s: GameState): GameState => ({
+        ...s,
+        snipes,
+        snipeShots: shots,
+      });
+      const hives = hiveBlocks.map((b) => hiveAt(at(b)));
+      const dead = step(reset({ ...game, hives }), NO_INPUT);
+      expect(dead.lives).toBe(game.lives - 1);
+      const back = untilBack(reset(dead), NO_INPUT, reset);
+      expect(back).toBeDefined();
+      expect(back?.back.hives).toHaveLength(hives.length);
+      expect(blockOf(maze, start, back?.back.player ?? start)).toBe(want);
     },
   );
 
@@ -739,7 +887,7 @@ describe("2.2 Player / 2.10 Sizes: comes back at a safe spot after a short delay
     expect(fired).toBe(true);
   });
 
-  it("comes back where no snipe touches it, with snipes on the middle of nearly every block", () => {
+  it("comes back where nothing is near, with snipes on the start position of nearly every block", () => {
     // A snipe on the place the player would start from in every block except a group of
     // 3 x 3 blocks half the maze away. The snipes are put back there, and their shots
     // removed, after every tick. The player starts on one of them, which kills it at once.
@@ -789,10 +937,42 @@ describe("2.2 Player / 2.10 Sizes: comes back at a safe spot after a short delay
     });
     expect(back).toBeDefined();
     if (back === undefined) return;
+    // The middle block of the group is the only safe one, and the farthest too.
+    expect(where(back.back.player)).toEqual(blockStart(maze, start, 8, 10));
     expect(back.back.lives).toBe(game.lives - 1);
     // It is not killed on the next tick either.
     const next = step(back.back, NO_INPUT);
     expect(next.lives).toBe(game.lives - 1);
     expect(next.respawn).toBe(0);
+  }, 120_000);
+
+  it("stays out of play while no block is safe, and comes back on the next tick once one is", () => {
+    // A snipe on the start position of every block, put back after every tick; the player
+    // starts on one of them. Long after any short delay, the snipes are taken away.
+    const game = quietGame(1);
+    const { maze } = game;
+    const start = where(game.player);
+    const blockers: Snipe[] = [];
+    for (let by = 0; by < BLOCKS_Y; by++) {
+      for (let bx = 0; bx < BLOCKS_X; bx++) {
+        blockers.push(snipe(blockStart(maze, start, bx, by), UP));
+      }
+    }
+    const reset = (s: GameState): GameState => ({
+      ...s,
+      snipes: blockers,
+      snipeShots: [],
+    });
+    let state = reset(step(reset(game), NO_INPUT));
+    expect(state.lives).toBe(game.lives - 1);
+    for (let tick = 2; tick <= SHORT + 60; tick++) {
+      state = step(state, NO_INPUT);
+      expect(state.respawn, `tick ${tick}`).toBeGreaterThan(0);
+      state = reset(state);
+    }
+    state = step({ ...state, snipes: [], snipeShots: [] }, NO_INPUT);
+    expect(state.respawn).toBe(0);
+    expect(where(state.player)).toEqual(blockStart(maze, start, 8, 10));
+    expect(state.lives).toBe(game.lives - 1);
   }, 120_000);
 });
