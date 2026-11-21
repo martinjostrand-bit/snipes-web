@@ -45,3 +45,43 @@ export function cellAt(grid: Grid, p: Point): Cell {
   const { x, y } = wrap(grid, p);
   return grid.cells[y * grid.width + x];
 }
+
+// Spec 2.10: a footprint, `width` x `height` cells whose top-left cell is (x, y).
+export interface Box {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+// Spec 2.10: whether every cell of the box is open, with wrap-around.
+export function fits(grid: Grid, box: Box): boolean {
+  for (let dy = 0; dy < box.height; dy++) {
+    for (let dx = 0; dx < box.width; dx++) {
+      if (cellAt(grid, { x: box.x + dx, y: box.y + dy }) === "wall") {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+// Whether two boxes share a cell, with wrap-around.
+export function overlaps(grid: Grid, a: Box, b: Box): boolean {
+  return (
+    spans(a.x, a.width, b.x, b.width, grid.width) &&
+    spans(a.y, a.height, b.y, b.height, grid.height)
+  );
+}
+
+// Whether [a, a + aLength) and [b, b + bLength) meet on an axis that wraps after `size`.
+function spans(
+  a: number,
+  aLength: number,
+  b: number,
+  bLength: number,
+  size: number,
+): boolean {
+  const offset = mod(a - b, size);
+  return offset < bLength || offset > size - aLength;
+}

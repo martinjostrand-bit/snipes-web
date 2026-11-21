@@ -1,17 +1,11 @@
 import type { Grid, Point } from "./grid";
-import {
-  hitHives,
-  hiveBox,
-  placeHives,
-  spawnSnipes,
-  type Hive,
-  type Snipe,
-} from "./hives";
+import { hitHives, hiveBox, placeHives, spawnSnipes, type Hive } from "./hives";
 import { generateMazeFrom, WALL_X, WALL_Y } from "./maze";
-import { movePlayer, PLAYER_SIZE, type Player } from "./player";
+import { movePlayer, playerBox, type Player } from "./player";
 import { createRng, type Rng } from "./rng";
 import { fireShot, moveShots, type Shot } from "./shots";
-import { checkSkill, hiveCount, maxEnemies } from "./skill";
+import { accuracy, checkSkill, hiveCount, maxEnemies } from "./skill";
+import { snipeBox, stepSnipes, type Snipe } from "./snipes";
 
 // Spec 2.10: the player starts as near the middle of a block as it can, leaning up-left: its
 // footprint 5 open cells from the block's left wall and 3 from its top wall.
@@ -51,7 +45,7 @@ export interface GameState {
   readonly rng: Rng;
   readonly maze: Grid;
   readonly player: Player;
-  /** The shots in flight. */
+  /** The player's shots in flight. */
   readonly shots: readonly Shot[];
   /** Ticks left before the player may fire again. */
   readonly reload: number;
@@ -59,8 +53,10 @@ export interface GameState {
   readonly aim: Point;
   /** Spec 2.3: the hives still alive. */
   readonly hives: readonly Hive[];
-  /** Spec 2.4: the snipes on the map. */
+  /** Spec 2.4: the snipes on the map, in the order they appeared. */
   readonly snipes: readonly Snipe[];
+  /** Spec 2.4: the snipes' shots in flight. */
+  readonly snipeShots: readonly Shot[];
 }
 
 // Spec 2.3 and 2.6: a new game at a skill level such as "A1"; anything other than a letter
@@ -69,12 +65,12 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
   checkSkill(skill);
   const [maze, afterMaze] = generateMazeFrom(createRng(seed));
   const player = { x: START_X, y: START_Y, wait: 0 };
-  const [hives, rng] = placeHives(maze, afterMaze, hiveCount(skill), {
-    x: player.x,
-    y: player.y,
-    width: PLAYER_SIZE,
-    height: PLAYER_SIZE,
-  });
+  const [hives, rng] = placeHives(
+    maze,
+    afterMaze,
+    hiveCount(skill),
+    playerBox(player),
+  );
   return {
     skill,
     rng,
@@ -85,40 +81,69 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
     aim: { x: 0, y: -1 },
     hives,
     snipes: [],
+    snipeShots: [],
   };
 }
 
-// Spec 2.2, 2.3 and 2.5: the shots in flight move on, and each one that is on a hive (fired
-// onto it) or enters one hits it and disappears. The hives that are due spawn their snipes, the player moves, and while a
-// fire key is held a new shot appears next to the player, independent of the way it moves,
-// except while Space is held. A new shot stays where it appears until the next tick. The
-// guns turn to a held fire direction.
+// Spec 2.2 to 2.5 and 4.3, in this order: the shots in flight move on, and each one that is
+// on a hive or snipe (fired onto it) or enters one hits it and disappears; a snipe's shot also
+// disappears when it reaches the player, who is unharmed until WP 11. The hives that are due
+// spawn their snipes, the player moves, and the snipes step and fire, in the order they
+// appeared. While a fire key is held a new shot appears next to the player, independent of
+// the way it moves, except while Space is held. A new shot stays where it appears until the
+// next tick. The guns turn to a held fire direction.
 export function step(state: GameState, input: InputState): GameState {
   const { maze } = state;
   const aim =
     input.fireX !== 0 || input.fireY !== 0
       ? { x: input.fireX, y: input.fireY }
       : state.aim;
-  const { shots, hits } = moveShots(
-    maze,
-    state.shots,
-    state.hives.map(hiveBox),
-  );
-  const { rng, hives, snipes } = spawnSnipes(
+  // The targets of the shots: the hives, then the snipes, then (for the snipes' shots) the
+  // player. A hit holds its target's index in this list.
+  const targets = [...state.hives.map(hiveBox), ...state.snipes.map(snipeBox)];
+  const flying = moveShots(maze, state.shots, targets);
+  const enemy = moveShots(maze, state.snipeShots, [
+    ...targets,
+    playerBox(state.player),
+  ]);
+  const hits = [...flying.hits, ...enemy.hits];
+  const first = state.hives.length;
+  const survivors = state.snipes.filter((_, i) => !hits.includes(first + i));
+  const spawned = spawnSnipes(
     maze,
     state.rng,
     hitHives(state.hives, hits),
-    state.snipes,
+    survivors,
     maxEnemies(state.skill),
   );
   const player = movePlayer(maze, state.player, input);
+  const { rng, snipes, shots } = stepSnipes(
+    maze,
+    spawned.rng,
+    spawned.hives.map(hiveBox),
+    spawned.snipes,
+    player,
+    accuracy(state.skill),
+  );
   const shot =
     state.reload > 0 || input.fast
       ? undefined
-      : fireShot(maze, player, input.fireX, input.fireY);
-  const next = { ...state, rng, hives, snipes, player, aim };
+      : fireShot(maze, playerBox(player), input.fireX, input.fireY);
+  const next = {
+    ...state,
+    rng,
+    hives: spawned.hives,
+    snipes,
+    snipeShots: [...enemy.shots, ...shots],
+    player,
+    aim,
+  };
   if (shot === undefined) {
-    return { ...next, shots, reload: Math.max(0, state.reload - 1) };
+    return {
+      ...next,
+      shots: flying.shots,
+      reload: Math.max(0, state.reload - 1),
+    };
   }
-  return { ...next, shots: [...shots, shot], reload: FIRE_TICKS - 1 };
+  return { ...next, shots: [...flying.shots, shot], reload: FIRE_TICKS - 1 };
 }
