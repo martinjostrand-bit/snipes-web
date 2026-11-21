@@ -2,6 +2,13 @@
 
 Each release covers one milestone (spec 5.5 and 9). Versions follow semantic versioning.
 
+## 0.4.0 – 2026-11-21 – M3 Hives and snipes
+
+- Hives, 3 to 10 by the skill digit, sit at random spots in the maze. Each spawns a snipe every 2 seconds while there are fewer enemies on the map than the digit allows, changes colour as it takes hits and breaks on the 20th.
+- Snipes roam the corridors, chase the player with some randomness and fire along their way when it lines up with the player, more often the nearer it is and the more accurate the skill letter makes them. Walls and hives block them. Their shots stop at walls, damage hives and kill other snipes. One shot from the player kills a snipe.
+- A snipe's shot or a snipe touching the player kills it and costs a life. After 2 seconds the player comes back in the middle of the block farthest from where it died that has no hive in it and no snipe or snipe shot in or next to it. Out of play it is not shown, cannot be hurt and does not fire.
+- Every game starts at skill level A1 with 5 lives until the title screen and the lives table come in M4.
+
 ## 0.3.0 – 2026-11-16 – M2 Shooting
 
 - W A S D fire in 8 directions, diagonally with two keys held, independent of movement; opposite keys cancel each other. Holding a fire key fires every 13 ticks (about 4.6 shots a second); tapping cannot fire faster, and nothing is fired while Space is held. The player's guns point in the last firing direction.

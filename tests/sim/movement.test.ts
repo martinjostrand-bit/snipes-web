@@ -87,7 +87,8 @@ function explore(
   onTick: (state: GameState, tick: number, input: InputState) => void,
 ): GameState {
   const draw = drawer(seed);
-  let state = createGame(seed);
+  // Without hives or snipes, which would kill the player and move it to a new place (WP 11).
+  let state: GameState = { ...createGame(seed), hives: [], snipes: [] };
   let tick = 0;
   while (tick < ticks) {
     let input = randomInput(draw);
@@ -269,6 +270,8 @@ describe("2.2 Player: every move follows the movement rules (2.10 footprint)", (
       ...game,
       maze,
       player: { ...game.player, x: start.x, y: start.y },
+      hives: [],
+      snipes: [],
     };
     const problems: string[] = [];
     const visited = new Set<string>();

@@ -348,3 +348,68 @@ export function snipeInSight(): SnipeSight {
   }
   throw new Error("No seed with a snipe that stays in sight in the start view");
 }
+
+// --- The player out of play ----------------------------------------------------------------
+
+export interface DeathSight {
+  readonly seed: number;
+  /** Where the player's footprint is drawn on the canvas, in the middle of the view. */
+  readonly player: Box;
+  /** The tick it dies on and the tick it comes back on, counted from the start of the game. */
+  readonly died: number;
+  readonly back: number;
+}
+
+// Spec 2.2 and 9.1 WP 11: the player, out of play, stays where it died, so the view does not
+// move. The out-of-play time must be long enough to see, at least half a second.
+const DEATH_TICKS = 30 * TICKS_PER_SECOND;
+const MIN_OUT = TICKS_PER_SECOND / 2;
+
+let deathSight: DeathSight | undefined;
+
+// The first seed in which, with no key held, the player dies after 5 and within 30 seconds
+// and, until it comes back, nothing is drawn on its footprint or next to it: no hive, snipe
+// or snipe's shot.
+export function deathInSight(): DeathSight {
+  if (deathSight !== undefined) return deathSight;
+  for (let seed = 1; seed <= 20000; seed++) {
+    let state = createGame(seed);
+    const lives = state.lives;
+    let died = -1;
+    for (let tick = 1; tick <= DEATH_TICKS && died < 0; tick++) {
+      state = step(state, NO_INPUT);
+      if (state.lives !== lives) died = tick;
+    }
+    // Not too early, so that the page is surely showing the game before it.
+    if (died < 5 * TICKS_PER_SECOND) continue;
+    const { maze, player } = state;
+    const near: Box = {
+      x: player.x - 1,
+      y: player.y - 1,
+      width: PLAYER + 2,
+      height: PLAYER + 2,
+    };
+    let clearAll = true;
+    let back = died;
+    while (
+      state.respawn > 0 &&
+      clearAll &&
+      back - died <= 60 * TICKS_PER_SECOND
+    ) {
+      clearAll =
+        !state.hives.some((h) => overlaps(maze, near, hiveBox(h))) &&
+        !state.snipes.some((s) => overlaps(maze, near, snipeBox(s))) &&
+        !state.snipeShots.some((s) => overlaps(maze, near, shotBox(s)));
+      state = step(state, NO_INPUT);
+      back++;
+    }
+    if (!clearAll || state.respawn > 0 || back - died < MIN_OUT) continue;
+    const drawn = onCanvas(maze, viewOrigin(maze, player), playerBox(player));
+    if (drawn === undefined) continue;
+    deathSight = { seed, player: drawn, died, back };
+    return deathSight;
+  }
+  throw new Error(
+    "No seed in which the player dies early with nothing near it",
+  );
+}

@@ -135,7 +135,8 @@ function explore(
   onTick: (state: GameState, tick: number) => void,
 ): GameState {
   const draw = drawer(seed);
-  let state = createGame(seed);
+  // Without hives or snipes, which would kill the player and move it to a new place (WP 11).
+  let state: GameState = { ...createGame(seed), hives: [], snipes: [] };
   let tick = 0;
   while (tick < ticks) {
     let input = randomInput(draw);

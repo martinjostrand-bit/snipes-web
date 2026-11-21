@@ -26,6 +26,11 @@ import {
 // 2.4 does not fix the order of the list a random direction is taken from, only that it is
 // fixed, so the tests learn it from the game first. Ghosts come with WP 15, so whole games use
 // letters without ghosts (A to C).
+//
+// Spec 2.2 and 9.1 WP 11: a snipe's shot that reaches the player and a snipe that touches it
+// kill the player: `state.lives` goes down by one, and `state.respawn` is above 0 while the
+// player is out of play, waiting to come back somewhere else. Where a test follows a snipe's
+// steps, or measures how it closes in, it stops at the player's death.
 
 type Axis = InputState["moveX"];
 type Dir = readonly [dx: Axis, dy: Axis];
@@ -576,6 +581,10 @@ describe("2.4 Snipes: every step follows the rules, in rough grids with hives", 
           // A hive spawned; its draws would mix with the snipe's.
           continue;
         }
+        if (after.lives !== state.lives) {
+          // The snipe killed the player; where the player comes back is WP 11's.
+          continue;
+        }
         const got = after.snipes[0];
         if (got.x !== a.at.x || got.y !== a.at.y) {
           problems.push(
@@ -607,10 +616,14 @@ describe("2.4 Snipes: every step follows the rules, in rough grids with hives", 
         for (let t = 1; t <= DIAGONAL_WAIT + 1 && next < 0; t++) {
           const before = later;
           later = step(later, NO_INPUT);
-          if (later.snipes.length !== 1) break;
+          if (later.snipes.length !== 1 || later.lives !== state.lives) break;
           if (later.rng.state !== before.rng.state) next = t;
         }
-        if (later.snipes.length === 1 && next !== a.wait) {
+        if (
+          later.snipes.length === 1 &&
+          later.lives === state.lives &&
+          next !== a.wait
+        ) {
           problems.push(
             `${what}: next step after ${next} ticks, want ${a.wait}`,
           );
@@ -676,7 +689,7 @@ function inputLog(seed: number, ticks: number): InputState[] {
 
 interface Watch {
   readonly problems: string[];
-  /** Snipe shots fired, and those that reached the player and disappeared. */
+  /** Snipe shots fired, and those that reached the player in play and disappeared. */
   fired: number;
   reachedPlayer: number;
   readonly tick: (before: GameState, after: GameState, n: number) => void;
@@ -736,7 +749,10 @@ function watch(maze: Grid, max: number): Watch {
         const came = `${from.x},${from.y},${s.dx},${s.dy}`;
         if (old.has(came)) {
           moved.add(came);
-          if (overlaps(maze, shotBox(s), playerBox(before.player))) {
+          if (
+            before.respawn === 0 &&
+            overlaps(maze, shotBox(s), playerBox(before.player))
+          ) {
             report(`${k} flew on through the player`);
           }
           continue;
@@ -745,7 +761,7 @@ function watch(maze: Grid, max: number): Watch {
         else w.fired++;
       }
       for (const s of before.snipeShots) {
-        if (moved.has(key(s))) continue;
+        if (moved.has(key(s)) || before.respawn !== 0) continue;
         const next = { x: s.x + s.dx, y: s.y + s.dy };
         if (
           overlaps(maze, shotBox(s), playerBox(before.player)) ||
@@ -785,7 +801,7 @@ describe("6.2 Invariants: snipes and their shots every tick of a whole game (2.4
   );
 
   it.each(["A1", "B1", "C1"])(
-    "the player standing still in a room with a hive, at %s: snipe shots reach it and disappear (until WP 11)",
+    "the player standing still in a room with a hive, at %s: the snipes kill it (WP 11)",
     (skill) => {
       // A room of 64 x 48 cells whose walls are its top row and left column.
       const room = createGrid(64, 48, ({ x, y }) =>
@@ -801,15 +817,21 @@ describe("6.2 Invariants: snipes and their shots every tick of a whole game (2.4
         createRng(3),
       );
       const checks = watch(room, MAX_ENEMIES[0]);
-      for (let tick = 1; tick <= 2 * MINUTE; tick++) {
+      const lives = state.lives;
+      let died = -1;
+      for (let tick = 1; tick <= 2 * MINUTE && died < 0; tick++) {
         const before = state;
         state = step(state, NO_INPUT);
         checks.tick(before, state, tick);
-        expect(where(state.player)).toEqual(player);
+        if (state.lives !== lives) died = tick;
+        else expect(where(state.player)).toEqual(player);
       }
       expect(checks.problems).toEqual([]);
       expect(checks.fired).toBeGreaterThan(0);
-      expect(checks.reachedPlayer).toBeGreaterThan(0);
+      // Within two minutes a snipe's shot or a snipe reached it, and it lost one life.
+      expect(died).toBeGreaterThan(0);
+      expect(state.lives).toBe(lives - 1);
+      expect(state.respawn).toBeGreaterThan(0);
     },
     SLOW,
   );
@@ -817,7 +839,7 @@ describe("6.2 Invariants: snipes and their shots every tick of a whole game (2.4
 
 describe("2.4 Snipes: chase the player with some randomness", () => {
   it.each([1, 2, 3, 4, 5])(
-    "in the open, a snipe far away closes in on a player standing still (PRNG seed %d)",
+    "in the open, a snipe far away closes in on a player standing still and kills it (PRNG seed %d)",
     (seed) => {
       // A room of 128 x 128 cells whose walls are its top row and left column, so that its
       // shots stop at a wall. The snipe starts in a far corner from the player.
@@ -840,13 +862,20 @@ describe("2.4 Snipes: chase the player with some randomness", () => {
         );
       };
       expect(distance(state)).toBe(126);
-      let near = 0;
-      for (let tick = 0; tick < MINUTE; tick++) {
+      const lives = state.lives;
+      let near = -1;
+      let died = -1;
+      for (let tick = 1; tick <= MINUTE && died < 0; tick++) {
         state = step(state, NO_INPUT);
-        if (tick >= MINUTE / 2 && distance(state) < 24) near++;
+        if (state.lives !== lives) died = tick;
+        else if (near < 0 && distance(state) < 24) near = tick;
       }
-      // Over the second half-minute it is mostly near the player.
-      expect(near).toBeGreaterThan(MINUTE / 4);
+      // Within half a minute it is near the player, and within a minute it has killed it,
+      // with a shot or by touching it (WP 11).
+      expect(near).toBeGreaterThan(0);
+      expect(near).toBeLessThanOrEqual(MINUTE / 2);
+      expect(died).toBeGreaterThan(near);
+      expect(state.lives).toBe(lives - 1);
     },
   );
 });

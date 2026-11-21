@@ -3,8 +3,8 @@ import { createRng, nextFloat, type Rng } from "./rng";
 
 // Spec 2.10: the maze is 16 x 20 blocks of 16 x 12 cells, 256 x 240 cells in all. Each block
 // has 15 x 11 open cells and a 1-cell wall on its left and top side where the maze has one.
-const BLOCK_W = 16;
-const BLOCK_H = 12;
+export const BLOCK_W = 16;
+export const BLOCK_H = 12;
 const BLOCKS_X = 16;
 const BLOCKS_Y = 20;
 const WIDTH = BLOCKS_X * BLOCK_W;

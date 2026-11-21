@@ -26,7 +26,9 @@ import {
 //
 // 2.4 does not fix the order of the list of 8 directions that a random direction is taken
 // from, only that it is fixed, so the tests learn it from the game and check that it is one.
-// Until WP 11, a snipe's shot that reaches the player disappears and touching does nothing.
+// Spec 2.2 and 9.1 WP 11: a snipe's shot that reaches the player, and a snipe that touches it,
+// kill the player: `state.lives` goes down by one and `state.respawn` is above 0 while the
+// player waits to come back (tests/unit/death.test.ts checks this in full).
 
 type Axis = InputState["moveX"];
 type Dir = readonly [dx: Axis, dy: Axis];
@@ -1153,25 +1155,19 @@ describe("2.4 Snipes: walls and hives block snipes; snipes may overlap each othe
     expect(after.snipes).toHaveLength(2);
   });
 
-  it("does nothing to the player when it touches it (until WP 11)", () => {
-    let state = arena({
+  it("kills the player when it touches it (WP 11)", () => {
+    // The snipe is inside the player's footprint, and one step leaves it there.
+    const state = arena({
       maze: field,
       player: S,
       snipes: [snipe({ x: S.x, y: S.y + 1 }, RIGHT)],
       rng: createRng(4),
     });
-    const places = new Set<string>();
-    for (let tick = 0; tick < 30; tick++) {
-      state = step(state, NO_INPUT);
-      expect(where(state.player)).toEqual(S);
-      places.add(`${state.snipes[0].x},${state.snipes[0].y}`);
-    }
-    expect(state.snipes).toHaveLength(1);
-    // Guard: the snipe stepped about, over the player.
-    expect(places.size).toBeGreaterThan(1);
-    // The player still moves.
-    state = run(state, 3, { ...NO_INPUT, moveX: 1 });
-    expect(state.player.x).toBeGreaterThan(S.x);
+    expect(state.respawn).toBe(0);
+    const after = step(state, NO_INPUT);
+    expect(after.lives).toBe(state.lives - 1);
+    expect(after.respawn).toBeGreaterThan(0);
+    expect(after.snipes).toHaveLength(1);
   });
 
   it("goes along a corridor exactly 2 rows high and never into its walls", () => {
@@ -1723,17 +1719,22 @@ describe("2.4 Snipes / 2.5 Bullets: a snipe's shot", () => {
     expect(state.snipeShots).toEqual([]);
   });
 
-  it("disappears when it reaches the player, and the player is unharmed (until WP 11)", () => {
+  it("disappears when it reaches the player, and kills it (WP 11)", () => {
     const player = { x: 70, y: 99 };
     let state = arena({
       maze: field,
       player,
       snipeShots: [shot({ x: 40, y: 100 }, RIGHT)],
     });
+    const lives = state.lives;
     let gone = -1;
-    for (let tick = 1; tick <= 40; tick++) {
+    for (let tick = 1; tick <= 29; tick++) {
       state = step(state, NO_INPUT);
       if (gone < 0 && state.snipeShots.length === 0) gone = tick;
+      if (tick < 29) {
+        expect(state.lives, `tick ${tick}`).toBe(lives);
+        expect(state.respawn, `tick ${tick}`).toBe(0);
+      }
       for (const s of state.snipeShots) {
         expect(
           overlaps(
@@ -1745,12 +1746,10 @@ describe("2.4 Snipes / 2.5 Bullets: a snipe's shot", () => {
         ).toBe(false);
       }
     }
-    // It entered the player's footprint on its 29th move, from x 40 to 69.
+    // It entered the player's footprint on its 29th move, from x 40 to 69, and killed it.
     expect(gone).toBe(29);
-    expect(where(state.player)).toEqual(player);
-    // The game goes on: the player still moves.
-    state = run(state, 3, { ...NO_INPUT, moveY: 1 });
-    expect(state.player.y).toBeGreaterThan(player.y);
+    expect(state.lives).toBe(lives - 1);
+    expect(state.respawn).toBeGreaterThan(0);
   });
 
   it("is not stopped by the player's shots, nor stops them", () => {

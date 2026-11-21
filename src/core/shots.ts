@@ -10,6 +10,10 @@ export interface Shot {
   readonly dy: -1 | 0 | 1;
 }
 
+export function shotBox(shot: Point): Box {
+  return { x: shot.x, y: shot.y, width: SHOT_SIZE, height: SHOT_SIZE };
+}
+
 // Spec 2.4 and 2.10: a shot appears just outside the footprint of whoever fires it (the
 // player or a snipe), in the firing direction: over the footprint's middle two columns or
 // rows when fired straight, touching the matching corner when fired diagonally. Undefined
