@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openWithClock } from "./canvas";
 import { CELL_PX, PLAYER_ON_CANVAS, quietSeeds } from "./game";
 
 // Spec 2.1, 2.2, 2.8, 2.10, 3, 4.1 and 9.1 WP 07, WP 07b and WP 11b: the game is drawn on one
@@ -455,7 +456,24 @@ test.describe("2.1 Maze and 2.8 Controls: an arrow key moves the player", () => 
 // disappears; the wall is unharmed and the player does not move, so the view does not scroll.
 // The player's own cells are left out of the comparison, because its eyes look in the last
 // firing direction and blink now and then (3).
+// A shot moves a cell per tick (2.5), so from the start it reaches the wall within a few ticks,
+// less time than a frame takes on a busy machine; a page on wall time can run its whole flight
+// within one frame and never draw it. So this test runs the page on Playwright's fake clock
+// (canvas.ts `openWithClock`): a frame every 16 ms of page time, each running about one tick.
 const PLAYER_BOX = PLAYER_ON_CANVAS;
+
+// Like `settle`, on the fake clock: runs the page until two shots 150 ms of page time apart
+// are the same.
+async function settleOnClock(page: Page, name: string): Promise<Shot> {
+  let previous = await snap(page, name);
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await page.clock.runFor(150);
+    const next = await snap(page, name);
+    if (next.hash === previous.hash) return next;
+    previous = next;
+  }
+  throw new Error("The canvas kept changing with no key held");
+}
 
 function mazeHash(page: Page): Promise<number> {
   return page.evaluate(
@@ -475,34 +493,25 @@ test.describe("2.5 Bullets and 2.8 Controls: a fire key shoots", () => {
   test("each of W A S D draws a shot that flies off, without moving the player", async ({
     page,
   }) => {
-    const errors = await openGame(page);
+    const errors = await openWithClock(page, `/?seed=${quietSeeds(1)[0]}`);
+    await installProbe(page);
 
     for (const key of ["KeyD", "KeyA", "KeyW", "KeyS"]) {
-      await settle(page, "before");
+      await settleOnClock(page, "before");
       const before = await mazeHash(page);
       await page.keyboard.down(key);
-      const drawn = await page
-        .waitForFunction(
-          ({ box, hash, hud }) =>
-            (window as unknown as ProbeWindow).probe.hashMazeOutside(
-              hud,
-              box.x,
-              box.y,
-              box.width,
-              box.height,
-            ) !== hash,
-          { box: PLAYER_BOX, hash: before, hud: CELL_PX },
-          { polling: "raf", timeout: 1500 },
-        )
-        .then(
-          () => true,
-          () => false,
-        );
+      // Frame by frame, for up to a second: the shot is fired on the first tick the key is
+      // held, as the last one was more than 13 ticks ago (2.5).
+      let drawn = false;
+      for (let frame = 0; frame < 60 && !drawn; frame++) {
+        await page.clock.runFor(16);
+        drawn = (await mazeHash(page)) !== before;
+      }
       await page.keyboard.up(key);
       expect(drawn, `${key} drew no shot outside the player`).toBe(true);
 
       // The shot has hit the wall and gone; the maze is drawn exactly as before.
-      await settle(page, "after");
+      await settleOnClock(page, "after");
       expect(await mazeHash(page), `${key}: the view changed`).toBe(before);
     }
     expect(errors).toEqual([]);

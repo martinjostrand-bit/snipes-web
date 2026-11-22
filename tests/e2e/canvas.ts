@@ -18,11 +18,16 @@ export async function open(page: Page, path: string): Promise<string[]> {
   return errors;
 }
 
-// Like `open`, but with Playwright's fake clock installed first, so that the page's time,
-// and with it its requestAnimationFrame frames, only moves on when the test runs
+// Like `open`, but with Playwright's fake clock installed first and paused, so that the
+// page's time, and with it its requestAnimationFrame frames, only moves on when the test runs
 // `page.clock.runFor(ms)`. The frames then come every 16 ms of page time however slowly the
-// browser runs, as on a display of about 60 Hz (3, 4.3), and a test that records them does
-// not depend on the machine's frame rate.
+// browser runs, as on a display of about 60 Hz (3, 4.3), each running about one tick, so a
+// test that records them, or that looks at the game at a given tick, does not depend on the
+// machine's frame rate. (An installed clock that is not paused also moves on with the wall
+// clock, by as much as the browser happens to take.) When this returns, the page has run for
+// OPEN_MS of page time.
+export const OPEN_MS = 200;
+
 export async function openWithClock(
   page: Page,
   path: string,
@@ -33,8 +38,9 @@ export async function openWithClock(
     if (message.type() === "error") errors.push(message.text());
   });
   await page.clock.install({ time: 0 });
+  await page.clock.pauseAt(1000);
   await page.goto(path);
-  await page.clock.runFor(200);
+  await page.clock.runFor(OPEN_MS);
   expect(await blocksWithDetail(page)).toBeGreaterThanOrEqual(8);
   return errors;
 }

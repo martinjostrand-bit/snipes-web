@@ -1,7 +1,14 @@
 import { expect, test } from "@playwright/test";
 // A namespace import, so that a missing export fails this test only, not the whole run.
 import * as view from "../../src/render/view";
-import { floorPixel, open, pixelOf, pixelsIn } from "./canvas";
+import {
+  floorPixel,
+  open,
+  OPEN_MS,
+  openWithClock,
+  pixelOf,
+  pixelsIn,
+} from "./canvas";
 import {
   CELL_PX,
   hiveInSight,
@@ -87,18 +94,22 @@ test.describe("2.3 Hives / 3 Presentation: spawned snipes are drawn", () => {
   }) => {
     test.setTimeout(60_000);
     const sight = snipeInSight();
-    const errors = await open(page, `/?seed=${sight.seed}`);
+    // On Playwright's fake clock the page draws a frame every 16 ms of page time, each
+    // running about one tick, however slowly the browser runs (canvas.ts). On wall time, a
+    // busy browser gives few frames, and the game, which catches up only so far after a long
+    // frame, falls behind: the snipe could come later than any wait.
+    const errors = await openWithClock(page, `/?seed=${sight.seed}`);
     const floor = await floorPixel(page, CELL_PX);
-    // The area the snipe covers while in sight is open, so before it is drawn it shows only
-    // floor; once it is drawn, a good part of the snipe's own cells show something else.
-    const wait = (1000 * sight.tick) / TICKS_PER_SECOND + 5000;
-    await expect
-      .poll(
-        async () =>
-          (await pixelsIn(page, sight.snipe)).filter((p) => p !== floor).length,
-        { timeout: wait },
-      )
-      .toBeGreaterThan((SNIPE_W * SNIPE_H * CELL_PX * CELL_PX) / 16);
+    // The snipe is spawned on tick `sight.tick` and stays in the area for two seconds (game.ts);
+    // the area is looked at half a second after it appears. The area is open, so before the
+    // snipe is drawn it shows only floor; once it is drawn, a good part of the snipe's own
+    // cells show something else.
+    await page.clock.runFor(
+      (1000 * sight.tick) / TICKS_PER_SECOND + 500 - OPEN_MS,
+    );
+    expect(
+      (await pixelsIn(page, sight.snipe)).filter((p) => p !== floor).length,
+    ).toBeGreaterThan((SNIPE_W * SNIPE_H * CELL_PX * CELL_PX) / 16);
     expect(errors).toEqual([]);
   });
 });

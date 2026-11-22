@@ -105,12 +105,16 @@ async function expectCanvasSize(page: Page): Promise<void> {
   expect(size).toEqual([WIDTH, HEIGHT]);
 }
 
+// The frames come back as one JSON string: Playwright passes an array of numbers value by
+// value, which for the millions of numbers of the view's frames takes longer than the test
+// may run, while a string of the same data takes well under a second.
 async function stopRecording<T>(page: Page): Promise<T[]> {
-  return page.evaluate(() => {
+  const json = await page.evaluate(() => {
     const recorder = (window as unknown as RecorderWindow).recorder;
     recorder.on = false;
-    return recorder.frames;
-  }) as Promise<T[]>;
+    return JSON.stringify(recorder.frames);
+  });
+  return JSON.parse(json) as T[];
 }
 
 // The number of pixels the maze has moved left in `after` compared with `before` (the pixel
