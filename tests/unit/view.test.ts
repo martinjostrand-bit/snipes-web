@@ -8,9 +8,9 @@ import {
   viewOrigin,
 } from "../../src/render/view";
 
-// Spec 2.1, 2.10, 3 and 9.1 WP 07 and WP 07b: the maze is larger than the screen, wraps
+// Spec 2.1, 2.10, 3 and 9.1 WP 07, WP 07b and WP 11b: the maze is larger than the screen, wraps
 // around at all four edges, and the view scrolls to keep the player centred. The view shows
-// `VIEW_COLS` x `VIEW_ROWS` = 80 x 44 maze cells of `CELL_PX` = 8 x 8 pixels, plus the HUD
+// `VIEW_COLS` x `VIEW_ROWS` = 80 x 44 maze cells of `CELL_PX` = 16 x 16 pixels, plus the HUD
 // row. `viewOrigin(maze, player)` gives the maze cell (wrapped into the grid) drawn at the
 // view's top-left, for the player's position (the top-left cell of its 4 x 4 footprint);
 // the view cell (i, j) shows the maze cell at origin + (i, j), wrapped.
@@ -42,21 +42,20 @@ function everyCell(maze: Grid): Point[] {
 // The size of the maze (2.10), open everywhere: the view does not depend on the cells.
 const maze = createGrid(256, 240, () => "open");
 
-describe("3 Presentation: the view is 80 x 44 cells of 8 x 8 pixels", () => {
+describe("3 Presentation: the view is 80 x 44 cells of 16 x 16 pixels", () => {
   it("shows 80 columns and 44 rows of the maze", () => {
     expect(VIEW_COLS).toBe(80);
     expect(VIEW_ROWS).toBe(44);
   });
 
-  it("draws each cell as an 8 x 8 pixel square", () => {
-    expect(CELL_PX).toBe(8);
+  it("draws each cell as a 16 x 16 pixel square", () => {
+    expect(CELL_PX).toBe(16);
   });
 
-  it("with the HUD row it is 640 x 360 pixels, which fits 1280 x 720 at x2 exactly", () => {
+  it("with the HUD row it is 1280 x 720 pixels, which fills a 1280 x 720 window at x1", () => {
     const width = VIEW_COLS * CELL_PX;
     const height = (VIEW_ROWS + 1) * CELL_PX;
-    expect([width, height]).toEqual([640, 360]);
-    expect([2 * width, 2 * height]).toEqual([1280, 720]);
+    expect([width, height]).toEqual([1280, 720]);
   });
 });
 

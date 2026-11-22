@@ -1,4 +1,4 @@
-import { advance } from "./core/loop";
+import { advance, TICK_MS } from "./core/loop";
 import { createGame } from "./core/state";
 import { inputFromKeys } from "./input/keyboard";
 import {
@@ -35,7 +35,7 @@ if (canvas && ctx) {
   // Spec 3: the view of the maze plus one HUD row.
   canvas.height = (VIEW_ROWS + 1) * CELL_PX;
 
-  // Spec 3: scale in whole-number steps to fit the window, so pixels stay sharp.
+  // Spec 3: scale in whole-number steps to fit the window.
   const fit = (): void => {
     const scale = Math.max(
       1,
@@ -74,7 +74,8 @@ if (canvas && ctx) {
       carriedMs,
       elapsed,
     ));
-    drawGame(ctx, state);
+    // Spec 3: drawn the fraction of a tick after the last step that has passed since it.
+    drawGame(ctx, state, carriedMs / TICK_MS, now);
     drawLabel(ctx, TITLE);
     requestAnimationFrame(frame);
   };

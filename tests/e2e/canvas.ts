@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import type { Box } from "./game";
+import { PLAYER_ON_CANVAS, type Box } from "./game";
 
 // Reads the game's canvas in the page through its 2D context. Pixels are compared as 32-bit
 // numbers (the four bytes R, G, B, A of a pixel), the same in every helper here.
@@ -15,6 +15,27 @@ export async function open(page: Page, path: string): Promise<string[]> {
   });
   await page.goto(path);
   await expect.poll(() => blocksWithDetail(page)).toBeGreaterThanOrEqual(8);
+  return errors;
+}
+
+// Like `open`, but with Playwright's fake clock installed first, so that the page's time,
+// and with it its requestAnimationFrame frames, only moves on when the test runs
+// `page.clock.runFor(ms)`. The frames then come every 16 ms of page time however slowly the
+// browser runs, as on a display of about 60 Hz (3, 4.3), and a test that records them does
+// not depend on the machine's frame rate.
+export async function openWithClock(
+  page: Page,
+  path: string,
+): Promise<string[]> {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  await page.clock.install({ time: 0 });
+  await page.goto(path);
+  await page.clock.runFor(200);
+  expect(await blocksWithDetail(page)).toBeGreaterThanOrEqual(8);
   return errors;
 }
 
@@ -51,19 +72,31 @@ function blocksWithDetail(page: Page): Promise<number> {
   });
 }
 
-// A hash of the whole canvas.
+// A hash of the whole canvas except the player's footprint in the middle of the view, where
+// its eyes blink now and then (3).
 export function canvasHash(page: Page): Promise<number> {
-  return page.evaluate(() => {
+  return page.evaluate((skip) => {
     const canvas = document.querySelector("canvas");
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) throw new Error("No canvas with a 2D context");
     const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = new Uint32Array(image.data.buffer);
     let h = 2166136261;
-    for (const pixel of new Uint32Array(image.data.buffer)) {
-      h = Math.imul(h ^ pixel, 16777619);
+    for (let y = 0; y < image.height; y++) {
+      for (let x = 0; x < image.width; x++) {
+        if (
+          x >= skip.x &&
+          x < skip.x + skip.width &&
+          y >= skip.y &&
+          y < skip.y + skip.height
+        ) {
+          continue;
+        }
+        h = Math.imul(h ^ pixels[y * image.width + x], 16777619);
+      }
     }
     return h >>> 0;
-  });
+  }, PLAYER_ON_CANVAS);
 }
 
 // Waits until two hashes of the canvas 150 ms apart are the same, and returns that hash.
