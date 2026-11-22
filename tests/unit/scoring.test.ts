@@ -13,33 +13,35 @@ import {
 // level bonus and the lives per digit.
 //
 // - `state.score` is the player's score: a whole number, 0 in a new game, that never goes down.
-//   It goes up by the 2.7 points for each event, the same at every skill level:
-//   - 100 when a player's shot destroys a hive (its 20th hit, 2.3). The 19 hits before give
-//     nothing, and a hive is destroyed once, however many shots enter it on that tick;
-//   - 10 when a player's shot kills a snipe (2.4). Ghosts come with WP 15;
-//   - nothing when a snipe's shot destroys a hive or kills a snipe (2.5), nothing when the
-//     player dies, and nothing for a shot that only hits a wall.
-// - `state.cleared` is true when the level is cleared: no hive and no enemy is left (2.7). It
-//   is false while any hive or any snipe is left, and true from the end of the tick on which
-//   the last one goes, whoever's shot that was, even with a snipe's shot still in flight or the
-//   player out of play (6.2: a level with zero hives, snipes and ghosts is always marked
-//   cleared). A new game has hives, so it is never cleared.
-// - `levelBonus(lives, ticks)` in `src/core/score.ts` is the level-cleared bonus (2.7): a whole
-//   number, at least 0, from the lives left and the time taken. The formula is tunable, so the
-//   tests check only its shape: more lives never give less, a longer time never gives more,
-//   and both matter. On the tick the level is cleared, the score goes up by
-//   levelBonus(state.lives, ticks) once, on top of that tick's points, where `state.lives` is
-//   the lives left at the end of that tick and `ticks` is the time taken: the number of ticks
-//   (`step` calls) from the new game up to and including the tick that cleared it. The bonus is
-//   never given again.
+//   It goes up by the 2.7 points, the same at every skill level, for each hive (100) and snipe
+//   (10) destroyed on a tick on which at least one of the player's shots hit it, even if a
+//   snipe's shot made the final hit (a hive's 20th hit, 2.3). One destroyed hive or snipe gives
+//   its points once, however many shots hit it on that tick. Hits that do not destroy, a hive
+//   or snipe destroyed only by snipes' shots (2.5), a hive whose earlier hits were the player's
+//   but whose final tick was only a snipe's shot, the player's death and shots into walls give
+//   nothing. Ghosts come with WP 15.
+// - `state.cleared` is true at the end of the first tick on which no hive and no snipe is left,
+//   whoever's shot removed the last one, also with shots (the player's or a snipe's) still in
+//   flight or the player out of play (2.7, 6.2), and from then on. It is false while any hive
+//   or snipe is left. A new game has hives, so it is not cleared. 2.7 leaves open the case of a
+//   player with no lives left on the clearing tick (WP 13); no test here clears a level then.
+// - `levelBonus(lives, ticks)` in `src/core/score.ts` is the level bonus B(L, T) of 2.7, for L
+//   lives (1 or more here) and T ticks: a whole number, at least 0. It never falls when L rises
+//   or T falls; it is strictly higher for each extra life; and it is strictly higher for a clear
+//   at least 60 ticks faster while both are within the first 18,000 ticks (after that it may
+//   stay flat). The formula is WP 18's, so the tests check only these properties. On the tick
+//   the level is cleared, the score goes up by levelBonus(state.lives, T) once, on top of that
+//   tick's points: `state.lives` is the lives at the end of that tick and T the number of ticks
+//   (`step` calls) in the level up to and including that tick, the level's first tick being 1.
+//   The bonus is never given again.
 // - `createGame(seed, skill).lives` is the digit's number of lives (2.6): 5, 5, 5, 5, 5, 4, 4,
 //   3, 2 for digits 1 to 9, whatever the letter.
 //
 // What follows a cleared level (the next level and its screen) is WP 13's, so the tests only
 // check that the level stays cleared and the bonus is not given again while the game is
-// stepped on. The games are built from a new game, as in the WP 09 to 11 tests, so the time
-// taken counts from 0. Snipes are copies of one that has just appeared, so a copy takes its
-// first step on the next tick (2.4); a shot moves before the snipes step (4.3), so a shot next
+// stepped on. The games are built from a new game, as in the WP 09 to 11 tests, so the level's
+// first `step` is its tick 1. Snipes are copies of one that has just appeared, so a copy takes
+// its first step on the next tick (2.4); shots move before the snipes step (4.3), so a shot next
 // to a snipe kills it on the first tick wherever that snipe was going.
 
 type Axis = InputState["moveX"];
@@ -58,6 +60,8 @@ interface Box {
 const PLAYER = 4; // the player's footprint is PLAYER x PLAYER cells (2.10)
 const SHOT = 2; // a shot's footprint is SHOT x SHOT cells (2.10)
 const HIVE = 4; // a hive's footprint is HIVE x HIVE cells (2.10)
+const SNIPE_W = 4; // a snipe's footprint is SNIPE_W x SNIPE_H cells (2.10)
+const SNIPE_H = 2;
 const HITS = 20; // the 20th hit destroys a hive (2.3)
 const HIVE_POINTS = 100; // 2.7
 const SNIPE_POINTS = 10; // 2.7
@@ -70,6 +74,7 @@ const LIVES = [5, 5, 5, 5, 5, 4, 4, 3, 2];
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
 const MOST_LIVES = Math.max(...LIVES);
+const SLOW = 120_000;
 
 const RIGHT: Dir = [1, 0];
 const LEFT: Dir = [-1, 0];
@@ -116,6 +121,10 @@ function fromLeft(target: Point): Point {
 
 function fromRightOfHive(hive: Point): Point {
   return { x: hive.x + HIVE, y: hive.y + 1 };
+}
+
+function fromRightOfSnipe(s: Point): Point {
+  return { x: s.x + SNIPE_W, y: s.y };
 }
 
 let template: Snipe | undefined;
@@ -327,19 +336,6 @@ describe("2.7 Levels and scoring: points per event", () => {
     expect(after.score).toBe(1230 + HIVE_POINTS + SNIPE_POINTS);
   });
 
-  it.each(["A1", "C9", "M5", "Z9"])("gives the same points at %s", (skill) => {
-    const state = arena({
-      skill,
-      hives: [{ ...H, hits: HITS - 1 }, H2],
-      snipes: [snipe(S)],
-      shots: [
-        shot(fromLeft({ x: H.x, y: H.y + 1 }), RIGHT),
-        shot(fromLeft(S), RIGHT),
-      ],
-    });
-    expect(step(state, NO_INPUT).score).toBe(HIVE_POINTS + SNIPE_POINTS);
-  });
-
   it("gives 100 for a hive destroyed by shots the player fires, through the keys", () => {
     // The player fires right; the shot appears just right of its footprint over its middle two
     // rows (2.10) and enters the hive, 2 cells further on, on its first move.
@@ -453,9 +449,206 @@ describe("2.5 Bullets / 2.7 Levels and scoring: snipe shots give no points", () 
     expect(after.snipes).toEqual([]);
     expect(after.score).toBe(HIVE_POINTS + SNIPE_POINTS);
   });
+
+  it("gives nothing when two snipes' shots destroy a hive on one tick", () => {
+    const state = arena({
+      hives: [{ ...H, hits: HITS - 2 }, H2],
+      snipeShots: [
+        shot(fromLeft({ x: H.x, y: H.y + 1 }), RIGHT),
+        shot(fromRightOfHive(H), LEFT),
+      ],
+    });
+    const after = step(state, NO_INPUT);
+    expect(after.hives).toHaveLength(1);
+    expect(after.score).toBe(0);
+  });
+
+  it("gives nothing when the player's hit was on an earlier tick than a snipe's final one", () => {
+    // The player's shot gives the hive its 19th hit; on the next tick a snipe's shot gives it
+    // the 20th, with no player's shot hitting it on that tick.
+    let state = arena({
+      hives: [{ ...H, hits: HITS - 2 }, H2],
+      shots: [shot(fromLeft({ x: H.x, y: H.y + 1 }), RIGHT)],
+    });
+    state = step(state, NO_INPUT);
+    expect(state.hives[0]).toMatchObject({ ...H, hits: HITS - 1 });
+    expect(state.score).toBe(0);
+    state = {
+      ...state,
+      snipeShots: [shot(fromLeft({ x: H.x, y: H.y + 1 }), RIGHT)],
+    };
+    state = step(state, NO_INPUT);
+    expect(state.hives).toHaveLength(1);
+    expect(state.score).toBe(0);
+  });
 });
 
-describe("2.7 Levels and scoring: cleared only when no hive and no enemy is left (6.2)", () => {
+describe("2.7 Levels and scoring: who scores when a player's shot and a snipe's shot hit on one tick", () => {
+  // The player's shot enters from one side and a snipe's shot from the other, on the same move.
+  it("gives 100 for a hive with 18 hits that takes one of each", () => {
+    const state = arena({
+      hives: [{ ...H, hits: HITS - 2 }, H2],
+      shots: [shot(fromLeft({ x: H.x, y: H.y + 1 }), RIGHT)],
+      snipeShots: [shot(fromRightOfHive(H), LEFT)],
+    });
+    const after = step(state, NO_INPUT);
+    expect(after.hives.map((h) => ({ x: h.x, y: h.y }))).toEqual([H2]);
+    expect(after.shots).toEqual([]);
+    expect(after.snipeShots).toEqual([]);
+    expect(after.score).toBe(HIVE_POINTS);
+  });
+
+  it("gives 100 for a hive with 18 hits that takes one of each, the snipe's from the left", () => {
+    const state = arena({
+      hives: [{ ...H, hits: HITS - 2 }, H2],
+      shots: [shot(fromRightOfHive(H), LEFT)],
+      snipeShots: [shot(fromLeft({ x: H.x, y: H.y + 1 }), RIGHT)],
+    });
+    const after = step(state, NO_INPUT);
+    expect(after.hives).toHaveLength(1);
+    expect(after.score).toBe(HIVE_POINTS);
+  });
+
+  it("gives 100 once for a hive with 19 hits that takes one of each", () => {
+    const state = arena({
+      hives: [{ ...H, hits: HITS - 1 }, H2],
+      shots: [shot(fromLeft({ x: H.x, y: H.y + 1 }), RIGHT)],
+      snipeShots: [shot(fromRightOfHive(H), LEFT)],
+    });
+    const after = step(state, NO_INPUT);
+    expect(after.hives).toHaveLength(1);
+    expect(after.score).toBe(HIVE_POINTS);
+  });
+
+  it("gives 100 once for a hive with 18 hits that takes two of the player's and one snipe's", () => {
+    const state = arena({
+      hives: [{ ...H, hits: HITS - 2 }, H2],
+      shots: [
+        shot(fromLeft({ x: H.x, y: H.y }), RIGHT),
+        shot(fromLeft({ x: H.x, y: H.y + 2 }), RIGHT),
+      ],
+      snipeShots: [shot(fromRightOfHive(H), LEFT)],
+    });
+    const after = step(state, NO_INPUT);
+    expect(after.hives).toHaveLength(1);
+    expect(after.score).toBe(HIVE_POINTS);
+  });
+
+  it("gives 10 once for a snipe that both shots hit", () => {
+    const state = arena({
+      hives: [H2],
+      snipes: [snipe(S)],
+      shots: [shot(fromLeft(S), RIGHT)],
+      snipeShots: [shot(fromRightOfSnipe(S), LEFT)],
+    });
+    const after = step(state, NO_INPUT);
+    expect(after.snipes).toEqual([]);
+    expect(after.shots).toEqual([]);
+    expect(after.snipeShots).toEqual([]);
+    expect(after.score).toBe(SNIPE_POINTS);
+  });
+
+  it("gives 10 once for a snipe that both shots hit, the snipe's from the left", () => {
+    const state = arena({
+      hives: [H2],
+      snipes: [snipe(S)],
+      shots: [shot(fromRightOfSnipe(S), LEFT)],
+      snipeShots: [shot(fromLeft(S), RIGHT)],
+    });
+    const after = step(state, NO_INPUT);
+    expect(after.snipes).toEqual([]);
+    expect(after.score).toBe(SNIPE_POINTS);
+  });
+
+  it("adds the bonus when such a hit clears the level", () => {
+    const state = arena({
+      hives: [{ ...H, hits: HITS - 2 }],
+      snipes: [snipe(S)],
+      shots: [
+        shot(fromLeft({ x: H.x, y: H.y + 1 }), RIGHT),
+        shot(fromLeft(S), RIGHT),
+      ],
+      snipeShots: [
+        shot(fromRightOfHive(H), LEFT),
+        shot(fromRightOfSnipe(S), LEFT),
+      ],
+    });
+    const after = step(state, NO_INPUT);
+    expect(after.hives).toEqual([]);
+    expect(after.snipes).toEqual([]);
+    expect(after.cleared).toBe(true);
+    expect(after.score).toBe(
+      HIVE_POINTS + SNIPE_POINTS + levelBonus(after.lives, 1),
+    );
+  });
+});
+
+describe("2.7 Levels and scoring: points and bonus the same for every letter and digit", () => {
+  // Each skill level gets the same scene: on the first tick the player's shots destroy a hive
+  // with 19 hits and kill a snipe. With a second hive the level goes on; without, it is cleared.
+
+  function scene(skill: string, last: boolean, lives?: number): GameState {
+    return arena({
+      skill,
+      lives,
+      hives: last ? [{ ...H, hits: HITS - 1 }] : [{ ...H, hits: HITS - 1 }, H2],
+      snipes: [snipe(S)],
+      shots: [
+        shot(fromLeft({ x: H.x, y: H.y + 1 }), RIGHT),
+        shot(fromLeft(S), RIGHT),
+      ],
+    });
+  }
+
+  // Each digit is its own test, every letter in it, so that no test runs long.
+  it.each(DIGITS)(
+    "gives 110 for a hive and a snipe at every letter, digit %d",
+    (digit) => {
+      for (const letter of LETTERS) {
+        const skill = `${letter}${digit}`;
+        const after = step(scene(skill, false), NO_INPUT);
+        expect(after.cleared, skill).toBe(false);
+        expect(after.score, skill).toBe(HIVE_POINTS + SNIPE_POINTS);
+      }
+    },
+    SLOW,
+  );
+
+  it.each(DIGITS)(
+    "gives the same bonus for the same lives and time at every letter, digit %d",
+    (digit) => {
+      for (const letter of LETTERS) {
+        const skill = `${letter}${digit}`;
+        const after = step(scene(skill, true, 3), NO_INPUT);
+        expect(after.cleared, skill).toBe(true);
+        expect(after.lives, skill).toBe(3);
+        expect(after.score, skill).toBe(
+          HIVE_POINTS + SNIPE_POINTS + levelBonus(3, 1),
+        );
+      }
+    },
+    SLOW,
+  );
+
+  it.each(DIGITS)(
+    "gives the bonus from the digit's own lives at every letter, digit %d",
+    (digit) => {
+      const lives = LIVES[digit - 1];
+      for (const letter of LETTERS) {
+        const skill = `${letter}${digit}`;
+        const after = step(scene(skill, true), NO_INPUT);
+        expect(after.cleared, skill).toBe(true);
+        expect(after.lives, skill).toBe(lives);
+        expect(after.score, skill).toBe(
+          HIVE_POINTS + SNIPE_POINTS + levelBonus(lives, 1),
+        );
+      }
+    },
+    SLOW,
+  );
+});
+
+describe("2.7 Levels and scoring: cleared exactly when no hive and no snipe is left (6.2)", () => {
   it("is not cleared while a hive is left, with no snipes", () => {
     let state = arena({ hives: [H] });
     for (let tick = 1; tick <= SECOND; tick++) {
@@ -571,6 +764,17 @@ describe("2.7 Levels and scoring: cleared only when no hive and no enemy is left
     expect(after.cleared).toBe(true);
   });
 
+  it("is cleared with a player's shot still in flight", () => {
+    const state = arena({
+      snipes: [snipe(S)],
+      shots: [shot(fromLeft(S), RIGHT), shot({ x: 10, y: 20 }, DOWN)],
+    });
+    const after = step(state, NO_INPUT);
+    expect(after.snipes).toEqual([]);
+    expect(after.shots).toHaveLength(1);
+    expect(after.cleared).toBe(true);
+  });
+
   it("is cleared with a snipe's shot still in flight (6.2: no hives, snipes or ghosts)", () => {
     const state = arena({
       snipes: [snipe(S)],
@@ -648,19 +852,41 @@ describe("2.7 Levels and scoring: cleared only when no hive and no enemy is left
 });
 
 describe("2.7 Levels and scoring: the level bonus, levelBonus(lives, ticks)", () => {
-  const LIVES_LEFT = [0, 1, 2, 3, 4, 5];
+  // L is 1 or more: a level cleared by a player with no lives left is open (2.7, WP 13). T
+  // counts the level's ticks from 1.
+  const LIVES_LEFT = [1, 2, 3, 4, 5];
+  const WINDOW = 18_000; // 2.7: the first 5 minutes, in which a faster clear always gives more
+  const FASTER = 60; // 2.7: how much faster, in ticks, a clear must be to give strictly more
   const TIMES = [
-    0,
     1,
+    2,
     SECOND,
     10 * SECOND,
     MINUTE,
     3 * MINUTE,
+    WINDOW - FASTER,
+    WINDOW - 1,
+    WINDOW,
+    WINDOW + 1,
     10 * MINUTE,
     30 * MINUTE,
     60 * MINUTE,
     10 * 60 * MINUTE,
   ];
+
+  // The pairs (lives, ticks) for which `wrong` is true, at most 10 of them.
+  function where(
+    wrong: (lives: number, ticks: number) => boolean,
+    last: number,
+  ): string[] {
+    const found: string[] = [];
+    for (const lives of LIVES_LEFT) {
+      for (let ticks = 1; ticks <= last && found.length < 10; ticks++) {
+        if (wrong(lives, ticks)) found.push(`${lives} lives, ${ticks} ticks`);
+      }
+    }
+    return found;
+  }
 
   it("is a whole number, at least 0", () => {
     for (const lives of LIVES_LEFT) {
@@ -674,20 +900,32 @@ describe("2.7 Levels and scoring: the level bonus, levelBonus(lives, ticks)", ()
         );
       }
     }
+    expect(
+      where(
+        (l, t) => !Number.isInteger(levelBonus(l, t)) || levelBonus(l, t) < 0,
+        WINDOW + FASTER,
+      ),
+    ).toEqual([]);
   });
 
-  it("never gives less for more lives left, at the same time", () => {
+  it("rises with each extra life, at every time", () => {
     for (const ticks of TIMES) {
-      for (let lives = 1; lives <= MOST_LIVES; lives++) {
+      for (let lives = 2; lives <= MOST_LIVES; lives++) {
         expect(
           levelBonus(lives, ticks),
           `${lives} lives, ${ticks} ticks`,
-        ).toBeGreaterThanOrEqual(levelBonus(lives - 1, ticks));
+        ).toBeGreaterThan(levelBonus(lives - 1, ticks));
       }
     }
   });
 
-  it("never gives more for a longer time, with the same lives left", () => {
+  it("never falls for a faster clear, tick by tick in the first 10 minutes", () => {
+    expect(
+      where((l, t) => levelBonus(l, t) < levelBonus(l, t + 1), 2 * WINDOW),
+    ).toEqual([]);
+  });
+
+  it("never falls for a faster clear, after that too", () => {
     for (const lives of LIVES_LEFT) {
       for (let i = 1; i < TIMES.length; i++) {
         expect(
@@ -698,18 +936,21 @@ describe("2.7 Levels and scoring: the level bonus, levelBonus(lives, ticks)", ()
     }
   });
 
-  it("depends on the lives left: each life more gives more, for a level cleared in a second", () => {
-    for (let lives = 2; lives <= MOST_LIVES; lives++) {
-      expect(levelBonus(lives, SECOND), `${lives} lives`).toBeGreaterThan(
-        levelBonus(lives - 1, SECOND),
-      );
-    }
+  it("is strictly higher for a clear 60 ticks faster, both within the first 18,000 ticks", () => {
+    // With the check above, this covers every pair of clears at least 60 ticks apart in the
+    // window.
+    expect(
+      where(
+        (l, t) => levelBonus(l, t) <= levelBonus(l, t + FASTER),
+        WINDOW - FASTER,
+      ),
+    ).toEqual([]);
   });
 
-  it("depends on the time taken: a second gives more than ten minutes", () => {
-    for (let lives = 1; lives <= MOST_LIVES; lives++) {
-      expect(levelBonus(lives, SECOND), `${lives} lives`).toBeGreaterThan(
-        levelBonus(lives, 10 * MINUTE),
+  it("is strictly higher for the fastest clear than for one at the end of the window", () => {
+    for (const lives of LIVES_LEFT) {
+      expect(levelBonus(lives, 1), `${lives} lives`).toBeGreaterThan(
+        levelBonus(lives, WINDOW),
       );
     }
   });
@@ -721,7 +962,7 @@ describe("2.7 Levels and scoring: the level bonus, levelBonus(lives, ticks)", ()
 
 describe("2.7 Levels and scoring: the bonus is given once, when the level is cleared", () => {
   // A lone hive with 19 hits waits `wait` ticks; then a player's shot destroys it on the next
-  // tick, which clears the level after wait + 1 ticks.
+  // tick, which clears the level on its tick T = wait + 1.
   function clearAfter(wait: number, lives: number): GameState {
     let state = arena({ hives: [{ ...H, hits: HITS - 1 }], lives });
     for (let tick = 0; tick < wait; tick++) state = quiet(state);
@@ -773,7 +1014,7 @@ describe("2.7 Levels and scoring: the bonus is given once, when the level is cle
   });
 
   it("uses the lives left", () => {
-    expect(levelBonus(5, SECOND)).not.toBe(levelBonus(2, SECOND));
+    expect(levelBonus(5, SECOND)).toBeGreaterThan(levelBonus(2, SECOND));
     expect(clearAfter(SECOND - 1, 5).score).toBe(
       HIVE_POINTS + levelBonus(5, SECOND),
     );
@@ -782,10 +1023,10 @@ describe("2.7 Levels and scoring: the bonus is given once, when the level is cle
     );
   });
 
-  it("uses the time taken, counted in ticks from the start of the level", () => {
-    expect(levelBonus(5, SECOND)).not.toBe(levelBonus(5, 10 * MINUTE));
-    expect(clearAfter(10 * MINUTE - 1, 5).score).toBe(
-      HIVE_POINTS + levelBonus(5, 10 * MINUTE),
+  it("uses the time taken: the ticks of the level up to and including the clearing one", () => {
+    expect(levelBonus(5, SECOND)).toBeGreaterThan(levelBonus(5, 5 * MINUTE));
+    expect(clearAfter(5 * MINUTE - 1, 5).score).toBe(
+      HIVE_POINTS + levelBonus(5, 5 * MINUTE),
     );
     expect(clearAfter(3 * MINUTE - 1, 4).score).toBe(
       HIVE_POINTS + levelBonus(4, 3 * MINUTE),
@@ -834,12 +1075,16 @@ describe("2.7 Levels and scoring: the bonus is given once, when the level is cle
 });
 
 describe("2.6 Skill level: the digit sets the lives", () => {
-  it.each(DIGITS)("digit %d, every letter", (digit) => {
-    for (const letter of LETTERS) {
-      const skill = `${letter}${digit}`;
-      expect(createGame(9, skill).lives, skill).toBe(LIVES[digit - 1]);
-    }
-  });
+  it.each(DIGITS)(
+    "digit %d, every letter",
+    (digit) => {
+      for (const letter of LETTERS) {
+        const skill = `${letter}${digit}`;
+        expect(createGame(9, skill).lives, skill).toBe(LIVES[digit - 1]);
+      }
+    },
+    SLOW,
+  );
 
   it("does not depend on the seed", () => {
     for (const seed of [0, 1, 77, 2 ** 32 - 1]) {
@@ -882,7 +1127,7 @@ describe("2.10 Sizes: the places the scoring tests use", () => {
       expect(clear(room, { ...h, width: HIVE, height: HIVE })).toBe(true);
     }
     for (const s of [S, S2]) {
-      expect(clear(room, { ...s, width: 4, height: 2 })).toBe(true);
+      expect(clear(room, { ...s, width: SNIPE_W, height: SNIPE_H })).toBe(true);
       expect(clear(room, { ...fromLeft(s), width: SHOT, height: SHOT })).toBe(
         true,
       );

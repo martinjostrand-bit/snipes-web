@@ -11,21 +11,24 @@ import {
 // Spec 2.5, 2.7, 6.2 and 9.1 WP 12: whole games run headless from a seed, a skill level and
 // scripted input, with the score and the win condition. `state.score` is the score,
 // `state.cleared` whether the level is cleared, and `levelBonus(lives, ticks)` the bonus for
-// clearing it with `lives` left after `ticks` ticks (tests/unit/scoring.test.ts checks these
-// in full). Every tick:
+// clearing it with `lives` at the end of the clearing tick, on the level's tick `ticks`, the first
+// being 1 (tests/unit/scoring.test.ts checks these in full). Every tick:
 //
 // - the score is a whole number, at least 0, and never goes down;
-// - the level is marked cleared exactly when no hive and no snipe is left (2.7, 6.2);
-// - the score goes up only by the 2.7 points: 100 for each hive a player's shot destroys and
-//   10 for each snipe it kills, and once, on the tick the level is cleared, the bonus. So the
+// - the level is marked cleared exactly when no hive and no snipe is left, whatever shots are
+//   in flight and whether or not the player is in play (2.7, 6.2);
+// - the score goes up only by the 2.7 points: 100 for each hive and 10 for each snipe destroyed
+//   on a tick on which a player's shot hit it (also when a snipe's shot made the final hit),
+//   and the bonus once, on the tick the level is cleared (6.2: at most once a level). So the
 //   rise, less any bonus, is a multiple of 10, at most 100 for each hive that went and 10 for
-//   each snipe a player's shot in flight could have killed;
+//   each snipe a player's shot in flight could have hit, as each shot hits one target;
 // - on a tick with no snipe's shot in flight, every hive and snipe that went was destroyed by a
 //   player's shot (a snipe's shot first moves on the tick after it appears, 2.4), so the rise
 //   is at least 100 for each hive that went and 10 for each snipe fewer.
 //
 // Ghosts come with WP 15, so the games use letters without ghosts (A to C). Lives are topped
-// up, so that the game goes on after the last one (WP 13).
+// up, so that the game goes on after the last one (WP 13) and no level is ever cleared by a
+// player with no lives left, the case 2.7 leaves open.
 
 type Axis = InputState["moveX"];
 
