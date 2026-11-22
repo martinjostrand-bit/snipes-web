@@ -6,7 +6,7 @@ import { createSnipe, SNIPE_H, SNIPE_W, type Snipe } from "./snipes";
 export const HIVE_SIZE = 4;
 
 // Spec 2.3: the 20th hit destroys a hive.
-const HIVE_HITS = 20;
+export const HIVE_HITS = 20;
 
 // Spec 2.3: ticks from one snipe a hive spawns to the next (a tunable constant).
 const SPAWN_TICKS = 120;

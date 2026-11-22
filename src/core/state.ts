@@ -1,10 +1,24 @@
 import { overlaps, wrap, type Box, type Grid, type Point } from "./grid";
-import { hitHives, hiveBox, placeHives, spawnSnipes, type Hive } from "./hives";
+import {
+  HIVE_HITS,
+  hitHives,
+  hiveBox,
+  placeHives,
+  spawnSnipes,
+  type Hive,
+} from "./hives";
 import { BLOCK_H, BLOCK_W, generateMazeFrom, WALL_X, WALL_Y } from "./maze";
 import { movePlayer, playerBox, type Player } from "./player";
 import { createRng, type Rng } from "./rng";
 import { fireShot, moveShots, shotBox, type Shot } from "./shots";
-import { accuracy, checkSkill, hiveCount, maxEnemies } from "./skill";
+import { HIVE_POINTS, levelBonus, SNIPE_POINTS } from "./score";
+import {
+  accuracy,
+  checkSkill,
+  hiveCount,
+  maxEnemies,
+  startLives,
+} from "./skill";
 import { snipeBox, stepSnipes, type Snipe } from "./snipes";
 
 // Spec 2.10: the player starts and respawns as near the middle of a block as it can, leaning
@@ -18,9 +32,6 @@ const DEFAULT_SKILL = "A1";
 
 // Spec 2.5: ticks from one shot to the next while a fire key is held.
 const FIRE_TICKS = 13;
-
-// Spec 2.2: the lives a game starts with, until the digit sets them (2.6, WP 12).
-const START_LIVES = 5;
 
 // Spec 2.2: the short delay, in ticks, from the player's death until it comes back.
 const RESPAWN_TICKS = 120;
@@ -86,6 +97,12 @@ export interface GameState {
   readonly lives: number;
   /** Spec 2.2: 0 while the player is in play; otherwise the ticks until it comes back. */
   readonly respawn: number;
+  /** Spec 2.7: the score, which never goes down. */
+  readonly score: number;
+  /** Spec 2.7: no hive and no enemy is left. */
+  readonly cleared: boolean;
+  /** Spec 2.7: the ticks stepped since the new game, the time the level has taken. */
+  readonly ticks: number;
   readonly motion: Motion;
 }
 
@@ -112,8 +129,11 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
     hives,
     snipes: [],
     snipeShots: [],
-    lives: START_LIVES,
+    lives: startLives(skill),
     respawn: 0,
+    score: 0,
+    cleared: false,
+    ticks: 0,
     motion: {
       player: undefined,
       snipes: [],
@@ -131,6 +151,8 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
 // key is held a new shot appears next to the player in play, independent of the way it moves,
 // except while Space is held. A new shot stays where it appears until the next tick. The eyes
 // turn to the direction of a shot fired. The steps and shot moves are kept for drawing them (3).
+// Spec 2.7: the player's shots score their kills, and on the tick the last hive and snipe go,
+// the level is cleared and the bonus added.
 export function step(state: GameState, input: InputState): GameState {
   const { maze } = state;
   // The targets of the shots: the hives, then the snipes, then (for the snipes' shots) the
@@ -168,6 +190,18 @@ export function step(state: GameState, input: InputState): GameState {
     accuracy(state.skill),
   );
   const snipeShots = [...enemy.shots, ...shots];
+  // Spec 2.7: a hive or snipe destroyed on a tick on which a player's shot hit it scores once.
+  const byPlayer = (i: number) => flying.hits.includes(i);
+  const points =
+    HIVE_POINTS *
+      state.hives.filter(
+        (h, i) =>
+          byPlayer(i) &&
+          h.hits + hits.filter((j) => j === i).length >= HIVE_HITS,
+      ).length +
+    SNIPE_POINTS * state.snipes.filter((_, i) => byPlayer(first + i)).length;
+  const ticks = state.ticks + 1;
+  const cleared = spawned.hives.length === 0 && snipes.length === 0;
   const life =
     shotDown || touchedFirst || touches(snipes)
       ? {
@@ -194,9 +228,13 @@ export function step(state: GameState, input: InputState): GameState {
     movedShots: flying.shots.length,
     movedSnipeShots: enemy.shots.length,
   };
+  const bonus = cleared && !state.cleared ? levelBonus(life.lives, ticks) : 0;
   const next = {
     ...state,
     ...life,
+    score: state.score + points + bonus,
+    cleared,
+    ticks,
     rng,
     hives: spawned.hives,
     snipes,
