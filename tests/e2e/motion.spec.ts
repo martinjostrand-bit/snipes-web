@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { floorPixel, open, settle } from "./canvas";
+import { floorPixel, openWithClock } from "./canvas";
 import {
   CELL_PX,
   PLAYER_ON_CANVAS,
@@ -17,8 +17,10 @@ import {
 // middle of the view.
 //
 // The tests record what the page draws, frame by frame, with a requestAnimationFrame loop in
-// the page. Drawing is smooth (anti-aliased), so pictures are compared by how much their
-// pixels differ, not by exact equality.
+// the page. They run the page on Playwright's fake clock (`openWithClock`), so that it draws
+// a frame every 16 ms of page time, as on a display of about 60 Hz, however few frames per
+// second a busy machine gives the browser. Drawing is smooth (anti-aliased), so pictures are
+// compared by how much their pixels differ, not by exact equality.
 
 const WIDTH = VIEW_COLS * CELL_PX;
 const HEIGHT = (VIEW_ROWS + 1) * CELL_PX;
@@ -167,18 +169,19 @@ test.describe("3 Presentation: Motion — the view follows the player's drawn po
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
-    const errors = await open(page, `/?seed=${quietSeeds(1)[0]}`);
+    const errors = await openWithClock(page, `/?seed=${quietSeeds(1)[0]}`);
     await expectCanvasSize(page);
-    await settle(page);
     await recordView(page);
-    await page.waitForTimeout(100);
+    await page.clock.runFor(100);
     // From the start there are 6 open cells to the right of the player's footprint (2.10).
+    // Held for 50 ms of page time (3 ticks), the player takes one or two steps (2.2).
     await page.keyboard.down("ArrowRight");
-    await page.waitForTimeout(60);
+    await page.clock.runFor(50);
     await page.keyboard.up("ArrowRight");
-    await page.waitForTimeout(700);
+    await page.clock.runFor(700);
     const frames = await stopRecording<ViewFrame>(page);
-    expect(frames.length).toBeGreaterThan(10);
+    // A frame every 16 ms of page time.
+    expect(frames.length).toBeGreaterThan(40);
 
     const [before] = frames;
     const shifts = frames.map((f) => shiftLeft(before, f));
@@ -220,7 +223,7 @@ test.describe("3 Presentation: Motion — a moving snipe is drawn between cells"
     // A seed in which a snipe appears in the start view and moves for a while in a small
     // open area, alone there (game.ts).
     const sight = snipeInSight();
-    const errors = await open(page, `/?seed=${sight.seed}`);
+    const errors = await openWithClock(page, `/?seed=${sight.seed}`);
     await expectCanvasSize(page);
     const floor = await floorPixel(page, CELL_PX);
     await page.evaluate(
@@ -263,7 +266,7 @@ test.describe("3 Presentation: Motion — a moving snipe is drawn between cells"
     // The snipe appears on tick `sight.tick` and stays in the area for two seconds; it is
     // watched for one and a half.
     const appears = (1000 * sight.tick) / TICKS_PER_SECOND;
-    await page.waitForTimeout(appears + 1500);
+    await page.clock.runFor(appears + 1500);
     const frames = await stopRecording<SnipeFrame>(page);
 
     const most = Math.max(...frames.map((f) => f.weight));
