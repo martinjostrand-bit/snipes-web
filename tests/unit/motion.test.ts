@@ -36,12 +36,15 @@ import * as view from "../../src/render/view";
 // - A move across a maze edge slides the short way: B - A is one cell, never most of the maze.
 // - Nothing slides into the game: at the start, a new snipe and a respawned player are drawn
 //   in place until they step.
-// - The view follows the player's drawn position (`viewOrigin`, tests/unit/view.test.ts).
+// - The view follows the player's drawn position (`viewOrigin`, tests/unit/view.test.ts), so
+//   it scrolls smoothly. Only a respawn and a new snipe appear without sliding, so a player
+//   that dies during a slide (2.2: it is then out of play and not drawn) is still drawn
+//   sliding on to its cell, and the view with it; the view does not jump until it comes back.
 //
-// The player out of play (2.2) is not drawn, so its drawn position is not checked then. The
-// tests only build games from `createGame` by changing the maze, the hives and the PRNG, and
-// leave the player, snipes and shots to the game, so that whatever the state keeps about the
-// last step is the game's own.
+// The tests only build games from `createGame` by changing the maze, the hives and the PRNG,
+// and leave the player, snipes and shots to the game, so that whatever the state keeps about
+// the last step is the game's own. The tests of a death mid-slide also add a snipe or a
+// snipe's shot to kill the player, and check only where the player is drawn.
 
 type Axis = InputState["moveX"];
 type Dir = readonly [dx: Axis, dy: Axis];
@@ -688,6 +691,146 @@ describe("3 Presentation: Motion — a respawned player appears in place without
     ).toBeLessThan(EXACT);
     expect(playerDifferences(states, inputs)).toEqual([]);
   });
+});
+
+describe("3 Presentation: Motion — a player that dies mid-slide keeps sliding to its cell", () => {
+  // An open field of 8 x 8 blocks (2.10), so that there are safe blocks to come back to.
+  const open = field(128, 96);
+  const RIGHT: InputState = hold(1, 0);
+
+  // A snipe that has just appeared, from a hive in the field, copied to `p`. Only where the
+  // player is drawn is checked, so what else the snipe holds does not matter.
+  function snipeAt(p: Point): GameState["snipes"][number] {
+    const found = firstSnipe(open, { x: 80, y: 60 }, 1, 0);
+    if (found === undefined) throw new Error("No snipe appeared");
+    return { ...found.states[0].snipes[0], x: p.x, y: p.y };
+  }
+
+  interface Death {
+    /** States from the start; the player steps from 14,10 to 15,10 on tick 1. */
+    readonly states: GameState[];
+    /** The tick it dies on. */
+    readonly died: number;
+    /** The ticks from the step to the next one being due. */
+    readonly ticks: number;
+  }
+
+  // The player steps right on tick 1 and dies on that tick, touching a snipe after its move
+  // (2.4): the snipe's footprint starts at column 18, next to the player's 14..17 before the
+  // step and on its 15..18 after it.
+  function diesOnItsStep(fast: boolean): Death {
+    const start = { ...game(open), snipes: [snipeAt({ x: 18, y: 10 })] };
+    const states = run(start, [hold(1, 0, fast)]);
+    return { states, died: 1, ticks: fast ? FAST_STEP_TICKS : STEP_TICKS };
+  }
+
+  // The player steps right on tick 1, and a snipe's shot flying left hits it on tick 2: the
+  // shot moves first in a tick (2.4), from columns 20..21 to 19..20 on tick 1, before the
+  // player's step, and into its footprint at 18..19 on tick 2.
+  function diesAfterItsStep(): Death {
+    const shot: GameState["snipeShots"][number] = {
+      x: 20,
+      y: 11,
+      dx: -1,
+      dy: 0,
+    };
+    const start = { ...game(open), snipeShots: [shot] };
+    const states = run(start, [RIGHT, NO_INPUT]);
+    return { states, died: 2, ticks: STEP_TICKS };
+  }
+
+  const deaths: [name: string, death: () => Death][] = [
+    ["on the tick it steps, touching a snipe", () => diesOnItsStep(false)],
+    [
+      "on the tick it steps with Space held, touching a snipe",
+      () => diesOnItsStep(true),
+    ],
+    ["one tick after its step, hit by a snipe's shot", diesAfterItsStep],
+  ];
+
+  // Steps on with no key held from the death until the player is back in play.
+  function untilBack(death: Death): GameState[] {
+    const states = [...death.states];
+    for (let t = 0; t < PATIENCE; t++) {
+      const last = states[states.length - 1];
+      if (t > 0 && last.respawn === 0) break;
+      states.push(step(last, NO_INPUT));
+    }
+    return states;
+  }
+
+  it.each(deaths)(
+    "dying %s, it is drawn sliding on evenly and arrives on its cell, while out of play",
+    (_name, death) => {
+      const { states, died, ticks } = death();
+      // The test's own check of the setup: it stepped on tick 1 and died on tick `died`.
+      expect(where(states[1].player)).toEqual({ x: 15, y: 10 });
+      expect(states[died - 1].respawn).toBe(0);
+      expect(states[died].respawn).toBeGreaterThan(0);
+      expect(states[died].lives).toBe(states[0].lives - 1);
+      const all = untilBack(death());
+      const problems: string[] = [];
+      for (let k = 1; k < all.length && all[k].respawn > 0; k++) {
+        for (const alpha of ALPHAS) {
+          const progress = Math.min(1, (k - 1 + alpha) / ticks);
+          const expected = { x: 14 + progress, y: 10 };
+          const p = drawn(all[k], alpha).player;
+          if (distance(open, p, expected) > EXACT) {
+            problems.push(
+              `tick ${k} at ${alpha}: drawn at ${show(p)}, expected ${show(expected)}`,
+            );
+          }
+        }
+      }
+      expect(problems.slice(0, 8)).toEqual([]);
+    },
+  );
+
+  it.each(deaths)(
+    "dying %s, the view keeps scrolling with the drawn position instead of jumping",
+    (_name, death) => {
+      const { ticks } = death();
+      const all = untilBack(death());
+      const at = (k: number, alpha: number) =>
+        view.viewOrigin(open, drawn(all[k], alpha).player);
+      // From the step to its arrival, the view moves a little each quarter tick, never a
+      // whole cell at once.
+      let last = at(1, 0);
+      for (let k = 1; k <= ticks + 1; k++) {
+        for (const alpha of ALPHAS) {
+          const now = at(k, alpha);
+          const moved = apart(now.x, last.x, open.width);
+          expect(moved, `tick ${k} at ${alpha}`).toBeGreaterThanOrEqual(-EXACT);
+          expect(moved, `tick ${k} at ${alpha}`).toBeLessThan(1 / 3 + EXACT);
+          last = now;
+        }
+      }
+      expect(apart(at(ticks + 1, 0).x, at(1, 0).x, open.width)).toBeCloseTo(
+        1,
+        9,
+      );
+    },
+  );
+
+  it.each(deaths)(
+    "dying %s, it is drawn in place on the tick it comes back",
+    (_name, death) => {
+      const all = untilBack(death());
+      const back = all[all.length - 1];
+      // The test's own check: it is back in play, somewhere else than where it died.
+      expect(back.respawn).toBe(0);
+      expect(distance(open, back.player, { x: 15, y: 10 })).toBeGreaterThan(4);
+      const later = run(back, times(3, NO_INPUT));
+      for (const state of later) {
+        for (const alpha of ALPHAS) {
+          const p = drawn(state, alpha).player;
+          expect(distance(open, p, back.player), `at ${alpha}`).toBeLessThan(
+            EXACT,
+          );
+        }
+      }
+    },
+  );
 });
 
 describe("3 Presentation: Motion — snipes slide between cells", () => {
