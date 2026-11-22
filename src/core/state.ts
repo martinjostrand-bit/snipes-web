@@ -44,6 +44,25 @@ export const NO_INPUT: InputState = {
   fireY: 0,
 };
 
+// Spec 3: a step being drawn sliding from the cell `from` to where it went, `age` ticks after
+// the step, of the `ticks` until the next step is due.
+export interface Slide {
+  readonly from: Point;
+  readonly ticks: number;
+  readonly age: number;
+}
+
+// Spec 3: what the screen needs to draw motion sliding between cells. The rules never read it.
+export interface Motion {
+  /** The player's last step while it slides; undefined once it has arrived. */
+  readonly player: Slide | undefined;
+  /** The same for each of the snipes, in their order. */
+  readonly snipes: readonly (Slide | undefined)[];
+  /** How many of the shots, from the first, moved on this tick; the rest were fired on it. */
+  readonly movedShots: number;
+  readonly movedSnipeShots: number;
+}
+
 // Spec 4.3: the game state is plain data, created from a seed and changed only by step().
 export interface GameState {
   /** Spec 2.6: the skill level, such as "A1". */
@@ -55,7 +74,7 @@ export interface GameState {
   readonly shots: readonly Shot[];
   /** Ticks left before the player may fire again. */
   readonly reload: number;
-  /** Spec 3: the last firing direction, where the player's guns point; up at the start. */
+  /** Spec 3: the last firing direction, where the eyes look; (0, 0), ahead, at the start. */
   readonly aim: Point;
   /** Spec 2.3: the hives still alive. */
   readonly hives: readonly Hive[];
@@ -67,6 +86,7 @@ export interface GameState {
   readonly lives: number;
   /** Spec 2.2: 0 while the player is in play; otherwise the ticks until it comes back. */
   readonly respawn: number;
+  readonly motion: Motion;
 }
 
 // Spec 2.3 and 2.6: a new game at a skill level such as "A1"; anything other than a letter
@@ -88,12 +108,18 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
     player,
     shots: [],
     reload: 0,
-    aim: { x: 0, y: -1 },
+    aim: { x: 0, y: 0 },
     hives,
     snipes: [],
     snipeShots: [],
     lives: START_LIVES,
     respawn: 0,
+    motion: {
+      player: undefined,
+      snipes: [],
+      movedShots: 0,
+      movedSnipeShots: 0,
+    },
   };
 }
 
@@ -103,14 +129,10 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
 // player in play moves, and the snipes step and fire, in the order they appeared; a snipe that
 // touches the player in play after it moves or after the snipes step kills it. While a fire
 // key is held a new shot appears next to the player in play, independent of the way it moves,
-// except while Space is held. A new shot stays where it appears until the next tick. The guns
-// turn to a held fire direction.
+// except while Space is held. A new shot stays where it appears until the next tick. The eyes
+// turn to the direction of a shot fired. The steps and shot moves are kept for drawing them (3).
 export function step(state: GameState, input: InputState): GameState {
   const { maze } = state;
-  const aim =
-    input.fireX !== 0 || input.fireY !== 0
-      ? { x: input.fireX, y: input.fireY }
-      : state.aim;
   // The targets of the shots: the hives, then the snipes, then (for the snipes' shots) the
   // player. A hit holds its target's index in this list.
   const targets = [...state.hives.map(hiveBox), ...state.snipes.map(snipeBox)];
@@ -121,7 +143,9 @@ export function step(state: GameState, input: InputState): GameState {
   ]);
   const hits = [...flying.hits, ...enemy.hits];
   const first = state.hives.length;
-  const survivors = state.snipes.filter((_, i) => !hits.includes(first + i));
+  const alive = (_: unknown, i: number) => !hits.includes(first + i);
+  const survivors = state.snipes.filter(alive);
+  const slides = state.motion.snipes.filter(alive);
   const spawned = spawnSnipes(
     maze,
     state.rng,
@@ -159,6 +183,17 @@ export function step(state: GameState, input: InputState): GameState {
     life.respawn > 0 || state.reload > 0 || input.fast
       ? undefined
       : fireShot(maze, playerBox(life.player), input.fireX, input.fireY);
+  const motion = {
+    // A player that dies goes on sliding, so that the view scrolls smoothly; on the tick it
+    // comes back it appears in place.
+    player:
+      state.respawn > 0 && life.respawn === 0
+        ? undefined
+        : slide(state.player, life.player, state.motion.player),
+    snipes: snipes.map((s, i) => slide(spawned.snipes[i], s, slides[i])),
+    movedShots: flying.shots.length,
+    movedSnipeShots: enemy.shots.length,
+  };
   const next = {
     ...state,
     ...life,
@@ -166,7 +201,7 @@ export function step(state: GameState, input: InputState): GameState {
     hives: spawned.hives,
     snipes,
     snipeShots,
-    aim,
+    motion,
   };
   if (shot === undefined) {
     return {
@@ -175,7 +210,31 @@ export function step(state: GameState, input: InputState): GameState {
       reload: Math.max(0, state.reload - 1),
     };
   }
-  return { ...next, shots: [...flying.shots, shot], reload: FIRE_TICKS - 1 };
+  return {
+    ...next,
+    shots: [...flying.shots, shot],
+    reload: FIRE_TICKS - 1,
+    aim: { x: shot.dx, y: shot.dy },
+  };
+}
+
+// Spec 3: the slide of a player or snipe that was at `before` and is at `after` at the end of
+// this tick, where `last` was its slide. A step starts a new slide that lasts until its next
+// step is due, its wait plus this tick; otherwise the last slide goes on until then.
+function slide(
+  before: Point,
+  after: Point & { readonly wait: number },
+  last: Slide | undefined,
+): Slide | undefined {
+  if (before.x !== after.x || before.y !== after.y) {
+    return {
+      from: { x: before.x, y: before.y },
+      ticks: after.wait + 1,
+      age: 0,
+    };
+  }
+  if (last === undefined || last.age + 1 >= last.ticks) return undefined;
+  return { ...last, age: last.age + 1 };
 }
 
 // Spec 2.2 and 2.10: the player that was not killed this tick. In play it stays so. Out of
