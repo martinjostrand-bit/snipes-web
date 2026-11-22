@@ -8,17 +8,20 @@ import {
   type InputState,
 } from "../../src/core/state";
 
-// Spec 3 (Player) and 9.1 WP 11b: the player is a bird head whose pupils look in the last
-// firing direction, one of the 8, and straight ahead at the start.
+// Spec 3 (Player, spec v0.14) and 9.1 WP 11b: the player is a bird head whose pupils look in
+// the direction of the last shot the player fired, one of the 8, and straight ahead at the
+// start. They turn only when a shot is actually fired, not when a fire key is held without a
+// shot: with Space held, during the reload, or with the shot's start position blocked (2.5).
 //
 // `state.aim` is where the pupils look: `{ x: 0, y: 0 }` is straight ahead (out of the
 // screen, pupils centred), otherwise a firing direction with x and y each -1, 0 or 1 (y grows
 // downwards, so up is y = -1). A new game starts looking straight ahead. Each shot the player
 // fires turns the pupils to its direction, and they keep looking that way until the next
-// shot; moving, or holding no fire key, does not change it.
+// shot; moving, holding no fire key, or holding one without firing does not change it.
 //
-// The cases fire only when a shot is due (2.5: at most one every 13 ticks) in an open field,
-// so each fire key held fires a shot.
+// Except in the last block, the cases fire only when a shot is due (2.5: at most one every 13
+// ticks) in an open field, so each fire key held fires a shot. Each case checks that a shot
+// was or was not fired by the count of the player's shots in flight (`state.shots`).
 
 type Axis = InputState["moveX"];
 type Dir = readonly [dx: Axis, dy: Axis];
@@ -124,6 +127,83 @@ describe("3 Presentation: Player — the pupils look in the last firing directio
         FIRE_TICKS,
       );
       expect(look(state)).toEqual({ x: d[0], y: d[1] });
+    }
+  });
+});
+
+describe("3 Presentation: Player — the pupils do not turn when a fire key is held without a shot", () => {
+  it.each(EIGHT)(
+    "holding %s with Space held fires no shot and does not turn them (2.2)",
+    (_name, d) => {
+      // From the start, and after a shot to the left.
+      const left: Dir = [-1, 0];
+      const fired = steps(step(inField(), fire(left)), NO_INPUT, FIRE_TICKS);
+      for (const [start, expected] of [
+        [inField(), AHEAD],
+        [fired, { x: -1, y: 0 }],
+      ] as const) {
+        let state = start;
+        const shots = state.shots.length;
+        for (let t = 0; t < 2 * FIRE_TICKS; t++) {
+          state = step(state, { ...fire(d), fast: true });
+          expect(state.shots.length, `tick ${t + 1}`).toBe(shots);
+          expect(look(state), `tick ${t + 1}`).toEqual(expected);
+        }
+      }
+    },
+  );
+
+  it.each(EIGHT)(
+    "holding %s during the reload after a shot does not turn them until the next shot fires (2.5)",
+    (_name, d) => {
+      // A shot down-left first, a direction none of the eight cases turns back to by itself.
+      const first: Dir = d[0] === -1 && d[1] === 1 ? [1, -1] : [-1, 1];
+      let state = step(inField(), fire(first));
+      expect(state.shots).toHaveLength(1);
+      // The next shot is due FIRE_TICKS ticks after the first: until then none fires.
+      for (let t = 1; t < FIRE_TICKS; t++) {
+        state = step(state, fire(d));
+        expect(state.shots.length, `tick ${t + 1}`).toBe(1);
+        expect(look(state), `tick ${t + 1}`).toEqual({
+          x: first[0],
+          y: first[1],
+        });
+      }
+      state = step(state, fire(d));
+      expect(state.shots).toHaveLength(2);
+      expect(look(state)).toEqual({ x: d[0], y: d[1] });
+    },
+  );
+
+  it("holding a direction whose shot's start position is a wall fires no shot and does not turn them (2.5, 2.10)", () => {
+    // A wall column just right of the player's footprint (columns 14 to 17 from the start):
+    // a shot to the right, up-right or down-right would start on it.
+    const game = inField();
+    const maze = createGrid(64, 48, ({ x }) => (x === 18 ? "wall" : "open"));
+    const blocked: Dir[] = [
+      [1, 0],
+      [1, -1],
+      [1, 1],
+    ];
+    let state: GameState = { ...game, maze };
+    // From the start: no shot, still straight ahead.
+    for (const d of blocked) {
+      state = step(state, fire(d));
+      expect(state.shots, `firing ${d.join(",")}`).toEqual([]);
+      expect(look(state), `firing ${d.join(",")}`).toEqual(AHEAD);
+    }
+    // A shot up turns them up; a blocked direction afterwards does not turn them back.
+    state = step(state, fire([0, -1]));
+    expect(state.shots).toHaveLength(1);
+    expect(look(state)).toEqual({ x: 0, y: -1 });
+    state = steps(state, NO_INPUT, FIRE_TICKS);
+    const shots = state.shots.length;
+    for (const d of blocked) {
+      for (let t = 0; t < FIRE_TICKS; t++) {
+        state = step(state, fire(d));
+        expect(state.shots.length, `firing ${d.join(",")}`).toBe(shots);
+        expect(look(state), `firing ${d.join(",")}`).toEqual({ x: 0, y: -1 });
+      }
     }
   });
 });
