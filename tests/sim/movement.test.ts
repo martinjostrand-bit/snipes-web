@@ -10,10 +10,11 @@ import { createRng, nextFloat, type Rng } from "../../src/core/rng";
 import {
   createGame,
   NO_INPUT,
-  step,
   type GameState,
   type InputState,
 } from "../../src/core/state";
+// Spec 2.7 (WP 13): these tests go on after a level is cleared; see play-on.ts.
+import { playOn as step } from "../play-on";
 
 // Spec 2.1, 2.2, 2.10, 6.2 and 9.1 WP 06 and WP 07b: whole games run headless from a seed
 // and scripted input. The player covers a 4 x 4 footprint whose top-left cell is its

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openWithClock } from "./canvas";
+import { canvasLabel, collectErrors, openWithClock } from "./canvas";
 import { CELL_PX, PLAYER_ON_CANVAS, quietSeeds } from "./game";
 
 // Spec 2.1, 2.2, 2.8, 2.10, 3, 4.1 and 9.1 WP 07, WP 07b and WP 11b: the game is drawn on one
@@ -50,6 +50,10 @@ interface ProbeWindow {
   probe: Probe;
 }
 
+// What the probe's hashes leave out: the HUD row, `hud` pixels high, and the player's
+// footprint.
+const PROBE_SKIP = { ...PLAYER_ON_CANVAS, hud: CELL_PX };
+
 async function installProbe(page: Page): Promise<void> {
   await page.evaluate((skip) => {
     const shots = new Map<string, ImageData>();
@@ -59,11 +63,13 @@ async function installProbe(page: Page): Promise<void> {
       if (!canvas || !ctx) throw new Error("No canvas with a 2D context");
       return ctx.getImageData(0, 0, canvas.width, canvas.height);
     };
-    // A hash of the image, leaving out the player's footprint (`skip`).
+    // A hash of the image below the HUD row, leaving out the player's footprint (`skip`).
+    // The HUD counts the enemies left (3, WP 13), which goes up whenever a hive anywhere in
+    // the maze spawns.
     const hash = (image: ImageData): number => {
       const pixels = new Uint32Array(image.data.buffer);
       let h = 2166136261;
-      for (let y = 0; y < image.height; y++) {
+      for (let y = skip.hud; y < image.height; y++) {
         for (let x = 0; x < image.width; x++) {
           if (
             x >= skip.x &&
@@ -164,7 +170,7 @@ async function installProbe(page: Page): Promise<void> {
       },
     };
     (window as unknown as ProbeWindow).probe = probe;
-  }, PLAYER_ON_CANVAS);
+  }, PROBE_SKIP);
 }
 
 function snap(page: Page, name: string): Promise<Shot> {
@@ -191,13 +197,12 @@ async function settle(page: Page, name: string): Promise<Shot> {
 // corridor of 15 x 11 cells (2.10), so not every block need show a wall.
 // Spec 4.3 and 9.1 WP 09: the game starts from a known seed (`?seed=N`) in which no hive or
 // snipe comes near the view for a minute, so that only the player and its shots change it.
+// Spec 3 and 9.1 WP 13: the page opens on the title screen, and Enter starts the game.
 async function openGame(page: Page): Promise<string[]> {
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
-  });
+  const errors = collectErrors(page);
   await page.goto(`/?seed=${quietSeeds(1)[0]}`);
+  await expect.poll(() => canvasLabel(page)).toContain("Snipes Web");
+  await page.keyboard.press("Enter");
   await installProbe(page);
   await expect
     .poll(() =>

@@ -11,10 +11,11 @@ import { moveShots, type Shot } from "../../src/core/shots";
 import {
   createGame,
   NO_INPUT,
-  step,
   type GameState,
   type InputState,
 } from "../../src/core/state";
+// Spec 2.7 (WP 13): these tests go on after a level is cleared; see play-on.ts.
+import { playOn as step } from "../play-on";
 
 // Spec 2.1, 2.5, 2.10, 6.2 and 9.1 WP 08: whole games with shooting, run headless from a seed
 // and scripted input. `state.shots` holds the shots in flight, each a 2 x 2 footprint whose

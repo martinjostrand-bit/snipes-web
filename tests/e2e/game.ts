@@ -7,9 +7,10 @@ import {
 } from "../../src/core/state";
 
 // Spec 3, 4.3 and 9.1 WP 09: what the page shows for `?seed=N`, worked out in Node with the
-// game's own core. With `?seed=N` the page plays `createGame(N)` (at its default skill level,
-// until the title screen of WP 13 lets the player choose one) and steps it with the keys held,
-// so a game in the core with no keys held shows what the page shows while no key is pressed.
+// game's own core. With `?seed=N` the page plays `createGame(N, skill)` from the title screen
+// (WP 13), at the skill level shown there, A1 in a new browser context, and steps it with the
+// keys held, so a game in the core with no keys held shows what the page shows while no key is
+// pressed.
 // The view is 80 x 44 maze cells of 16 x 16 pixels below one HUD row, with the player's 4 x 4
 // footprint in its middle (2.10, 3).
 
