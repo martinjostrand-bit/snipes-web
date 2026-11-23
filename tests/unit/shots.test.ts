@@ -10,10 +10,11 @@ import { moveShots, type Shot } from "../../src/core/shots";
 import {
   createGame,
   NO_INPUT,
-  step,
   type GameState,
   type InputState,
 } from "../../src/core/state";
+// Spec 2.7 (WP 13): these tests go on after a level is cleared; see play-on.ts.
+import { playOn as step } from "../play-on";
 
 // Spec 2.1, 2.2, 2.5, 2.8, 2.10, 4.3, 6.2 and 9.1 WP 08: bullets.
 //

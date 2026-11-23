@@ -11,10 +11,11 @@ import { moveShots, type Shot } from "../../src/core/shots";
 import {
   createGame,
   NO_INPUT,
-  step,
   type GameState,
   type InputState,
 } from "../../src/core/state";
+// Spec 2.7 (WP 13): these tests go on after a level is cleared; see play-on.ts.
+import { playOn as step } from "../play-on";
 
 // Spec 2.2, 2.5, 4.3 and 9.1 WP 08b: speeds.
 //
@@ -251,12 +252,31 @@ function flightPath(maze: Grid, start: Point, dx: number, dy: number): Point[] {
 describe("4.3 Game loop: 60 ticks per second", () => {
   const RIGHT = go(1, 0);
 
+  // `advance` steps the game with the game's own `step`, so the player is not alone here: a
+  // hive far from its way and from its shots' keeps the level from being cleared (2.7, WP 13).
+  // The hive never spawns: its wait for its next spawn never runs out.
+  function lone(): GameState {
+    const game = place(field, centre);
+    return {
+      ...game,
+      hives: [
+        {
+          ...createGame(1).hives[0],
+          x: 20,
+          y: 20,
+          hits: 0,
+          wait: Number.MAX_SAFE_INTEGER,
+        },
+      ],
+    };
+  }
+
   it("one tick is 1/60 s", () => {
     expect(TICK_MS).toBeCloseTo(1000 / TICKS_PER_SECOND, 9);
   });
 
   it("runs 60 ticks in a second, and 59 in just under a second", () => {
-    const start = place(field, centre);
+    const start = lone();
     const states = run(start, repeat(RIGHT, TICKS_PER_SECOND));
 
     const second = advance(start, RIGHT, 0, 1005);
@@ -268,7 +288,7 @@ describe("4.3 Game loop: 60 ticks per second", () => {
   });
 
   it("runs exactly one tick in each frame of a 60 Hz screen", () => {
-    const start = place(field, centre);
+    const start = lone();
     const states = run(start, repeat(RIGHT, 120));
     let result = { state: start, carriedMs: 0 };
     for (let frame = 0; frame < 120; frame++) {
@@ -279,7 +299,7 @@ describe("4.3 Game loop: 60 ticks per second", () => {
   });
 
   it("runs two ticks in each frame of a 30 Hz screen", () => {
-    const start = place(field, centre);
+    const start = lone();
     const states = run(start, repeat(RIGHT, 120));
     let result = { state: start, carriedMs: 0 };
     for (let frame = 0; frame < 60; frame++) {
@@ -289,7 +309,7 @@ describe("4.3 Game loop: 60 ticks per second", () => {
   });
 
   it("in one second of play, the player moves 20 cells, or 30 with Space", () => {
-    const start = place(field, centre);
+    const start = lone();
     const normal = advance(start, RIGHT, 0, 1005).state;
     const fast = advance(start, go(1, 0, true), 0, 1005).state;
     expect(at(normal)).toEqual({ x: centre.x + 20, y: centre.y });
@@ -297,13 +317,13 @@ describe("4.3 Game loop: 60 ticks per second", () => {
   });
 
   it("in one second of holding a fire key, 5 shots are fired (about 4.6 a second)", () => {
-    const end = advance(place(field, centre), fire(1, 0), 0, 1005).state;
+    const end = advance(lone(), fire(1, 0), 0, 1005).state;
     expect(end.shots).toHaveLength(5);
   });
 
   it("in one second, a shot flies 60 cells", () => {
     // Fired on one tick, then flying for a whole second: 60 more ticks.
-    const start = place(field, centre);
+    const start = lone();
     const fired = step(start, fire(0, 1));
     expect(fired.shots).toHaveLength(1);
     const flown = advance(fired, NO_INPUT, 0, 1005).state;

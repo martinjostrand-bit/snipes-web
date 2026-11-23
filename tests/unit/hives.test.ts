@@ -4,10 +4,11 @@ import { createRng, nextFloat, type Rng } from "../../src/core/rng";
 import {
   createGame,
   NO_INPUT,
-  step,
   type GameState,
   type InputState,
 } from "../../src/core/state";
+// Spec 2.7 (WP 13): these tests go on after a level is cleared; see play-on.ts.
+import { playOn as step } from "../play-on";
 import { hiveColour } from "../../src/render/view";
 
 // Spec 2.3, 2.5, 2.6, 2.10, 4.3, 6.2 and 9.1 WP 09: hives.

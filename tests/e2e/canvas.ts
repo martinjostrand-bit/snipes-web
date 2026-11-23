@@ -1,19 +1,42 @@
 import { expect, type Page } from "@playwright/test";
-import { PLAYER_ON_CANVAS, type Box } from "./game";
+import { CELL_PX, PLAYER_ON_CANVAS, type Box } from "./game";
 
 // Reads the game's canvas in the page through its 2D context. Pixels are compared as 32-bit
 // numbers (the four bytes R, G, B, A of a pixel), the same in every helper here.
 
-// Opens the page at `path` (such as "/?seed=7") and waits until it has drawn the maze across
-// the canvas: at least half of its 4 x 4 equal blocks show more than one colour. Returns the
-// errors the page reports, as they come.
-export async function open(page: Page, path: string): Promise<string[]> {
+// Collects the errors the page reports, as they come.
+export function collectErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
+  return errors;
+}
+
+// The canvas's accessible name. The canvas text is invisible to screen readers and tests, so
+// the page repeats it there (3, 5.5): the name and version on the title screen.
+export async function canvasLabel(page: Page): Promise<string> {
+  return (await page.locator("canvas").getAttribute("aria-label")) ?? "";
+}
+
+// Spec 3 and 9.1 WP 13: the page opens on the title screen, and Enter starts a game.
+// Opens the page at `path` (such as "/?seed=7"), waits for the title screen, starts a game
+// with Enter and waits until it has drawn the maze across the canvas: at least half of its
+// 4 x 4 equal blocks show more than one colour. Returns the errors the page reports, as they
+// come.
+export async function open(page: Page, path: string): Promise<string[]> {
+  const errors = collectErrors(page);
   await page.goto(path);
+  await expect.poll(() => canvasLabel(page)).toContain("Snipes Web");
+  await page.keyboard.press("Enter");
+  // Two frames, so that the game has replaced the title on the canvas.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
   await expect.poll(() => blocksWithDetail(page)).toBeGreaterThanOrEqual(8);
   return errors;
 }
@@ -24,22 +47,33 @@ export async function open(page: Page, path: string): Promise<string[]> {
 // browser runs, as on a display of about 60 Hz (3, 4.3), each running about one tick, so a
 // test that records them, or that looks at the game at a given tick, does not depend on the
 // machine's frame rate. (An installed clock that is not paused also moves on with the wall
-// clock, by as much as the browser happens to take.) When this returns, the page has run for
-// OPEN_MS of page time.
+// clock, by as much as the browser happens to take.) The page shows the title screen for
+// TITLE_MS of page time; then Enter starts the game (3, WP 13). When this returns, the game
+// has run for OPEN_MS of page time.
 export const OPEN_MS = 200;
+export const TITLE_MS = 100;
+
+// Opens the page at `path` on the fake clock, paused, and runs it for TITLE_MS, showing the
+// title screen. Returns the errors the page reports, as they come.
+export async function openTitleWithClock(
+  page: Page,
+  path: string,
+): Promise<string[]> {
+  const errors = collectErrors(page);
+  await page.clock.install({ time: 0 });
+  await page.clock.pauseAt(1000);
+  await page.goto(path);
+  await page.clock.runFor(TITLE_MS);
+  expect(await canvasLabel(page)).toContain("Snipes Web");
+  return errors;
+}
 
 export async function openWithClock(
   page: Page,
   path: string,
 ): Promise<string[]> {
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
-  });
-  await page.clock.install({ time: 0 });
-  await page.clock.pauseAt(1000);
-  await page.goto(path);
+  const errors = await openTitleWithClock(page, path);
+  await page.keyboard.press("Enter");
   await page.clock.runFor(OPEN_MS);
   expect(await blocksWithDetail(page)).toBeGreaterThanOrEqual(8);
   return errors;
@@ -78,8 +112,12 @@ function blocksWithDetail(page: Page): Promise<number> {
   });
 }
 
-// A hash of the whole canvas except the player's footprint in the middle of the view, where
-// its eyes blink now and then (3).
+// What canvasHash leaves out: the HUD row, `hud` pixels high, and the player's footprint.
+const HASH_SKIP = { ...PLAYER_ON_CANVAS, hud: CELL_PX };
+
+// A hash of the canvas below the HUD row, except the player's footprint in the middle of the
+// view, where its eyes blink now and then (3). The HUD row is left out: it counts the enemies
+// left (3, WP 13), which goes up whenever a hive anywhere in the maze spawns.
 export function canvasHash(page: Page): Promise<number> {
   return page.evaluate((skip) => {
     const canvas = document.querySelector("canvas");
@@ -88,7 +126,7 @@ export function canvasHash(page: Page): Promise<number> {
     const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const pixels = new Uint32Array(image.data.buffer);
     let h = 2166136261;
-    for (let y = 0; y < image.height; y++) {
+    for (let y = skip.hud; y < image.height; y++) {
       for (let x = 0; x < image.width; x++) {
         if (
           x >= skip.x &&
@@ -102,7 +140,7 @@ export function canvasHash(page: Page): Promise<number> {
       }
     }
     return h >>> 0;
-  }, PLAYER_ON_CANVAS);
+  }, HASH_SKIP);
 }
 
 // Waits until two hashes of the canvas 150 ms apart are the same, and returns that hash.

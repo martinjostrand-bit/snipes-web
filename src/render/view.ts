@@ -306,13 +306,50 @@ function drawShot(
   disc(ctx, 16, 16, 12, glow);
 }
 
-// Spec 5.5 and 9 M0: the title and version stay in the HUD row until the title screen (WP 13)
-// shows them.
-export function drawLabel(ctx: CanvasRenderingContext2D, text: string): void {
+// Spec 3: the HUD, one line of `text` in the row above the view.
+export function drawHud(ctx: CanvasRenderingContext2D, text: string): void {
   ctx.fillStyle = FLOOR;
   ctx.fillRect(0, 0, VIEW_COLS * CELL_PX, CELL_PX);
   ctx.font = `${CELL_PX}px monospace`;
   ctx.fillStyle = LABEL;
+  ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.fillText(text, CELL_PX, CELL_PX / 2);
+}
+
+// Spec 3: the title screen, its `lines` in the middle of an empty canvas.
+export function drawTitle(
+  ctx: CanvasRenderingContext2D,
+  lines: readonly string[],
+): void {
+  ctx.fillStyle = FLOOR;
+  ctx.fillRect(0, 0, VIEW_COLS * CELL_PX, (VIEW_ROWS + 1) * CELL_PX);
+  drawPanel(ctx, lines);
+}
+
+// Spec 3: the paused, won and game-over screens, their `lines` on a panel in the middle of the
+// view, over the game as it was.
+export function drawPanel(
+  ctx: CanvasRenderingContext2D,
+  lines: readonly string[],
+): void {
+  const lineHeight = 2 * CELL_PX;
+  const width = 40 * CELL_PX;
+  const height = (lines.length + 1) * lineHeight;
+  const left = (VIEW_COLS * CELL_PX - width) / 2;
+  const top = ((VIEW_ROWS + 2) * CELL_PX - height) / 2;
+  ctx.fillStyle = FLOOR;
+  ctx.strokeStyle = WALL;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(left, top, width, height, CELL_PX / 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.font = `${CELL_PX}px monospace`;
+  ctx.fillStyle = LABEL;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  lines.forEach((line, i) => {
+    ctx.fillText(line, (VIEW_COLS * CELL_PX) / 2, top + (i + 1) * lineHeight);
+  });
 }

@@ -4,10 +4,11 @@ import { createRng, nextFloat, type Rng } from "../../src/core/rng";
 import {
   createGame,
   NO_INPUT,
-  step,
   type GameState,
   type InputState,
 } from "../../src/core/state";
+// Spec 2.7 (WP 13): these tests go on after a level is cleared; see play-on.ts.
+import { playOn as step } from "../play-on";
 // A namespace import, so that a missing export fails these tests one by one, not the file.
 import * as view from "../../src/render/view";
 

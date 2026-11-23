@@ -3,10 +3,11 @@ import { createGrid, type Point } from "../../src/core/grid";
 import {
   createGame,
   NO_INPUT,
-  step,
   type GameState,
   type InputState,
 } from "../../src/core/state";
+// Spec 2.7 (WP 13): these tests go on after a level is cleared; see play-on.ts.
+import { playOn as step } from "../play-on";
 
 // Spec 3 (Player, spec v0.14) and 9.1 WP 11b: the player is a bird head whose pupils look in
 // the direction of the last shot the player fired, one of the 8, and straight ahead at the

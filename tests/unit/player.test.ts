@@ -3,10 +3,11 @@ import { cellAt, createGrid, type Grid, type Point } from "../../src/core/grid";
 import {
   createGame,
   NO_INPUT,
-  step,
   type GameState,
   type InputState,
 } from "../../src/core/state";
+// Spec 2.7 (WP 13): these tests go on after a level is cleared; see play-on.ts.
+import { playOn as step } from "../play-on";
 
 // Spec 2.1, 2.2, 2.10, 4.3 and 9.1 WP 06 and WP 07b: the player covers a 4 x 4 footprint of
 // cells, and its position (`player.x`, `player.y`) is the footprint's top-left cell. It moves
