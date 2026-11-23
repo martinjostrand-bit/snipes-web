@@ -26,14 +26,14 @@ import { snipeBox, stepSnipes, type Snipe } from "./snipes";
 const START_X = WALL_X + 1 + 5;
 const START_Y = WALL_Y + 1 + 3;
 
-// Spec 2.6: the skill level of a game started without one, until the title screen (WP 13)
-// lets the player choose.
+// Spec 2.6: the skill level of a game started without one.
 const DEFAULT_SKILL = "A1";
 
 // Spec 2.5: ticks from one shot to the next while a fire key is held.
 const FIRE_TICKS = 13;
 
-// Spec 2.2: the short delay, in ticks, from the player's death until it comes back.
+// Spec 2.2: the delay, in ticks, from the player's death until it comes back, or, after the
+// last death, until the game is over.
 const RESPAWN_TICKS = 120;
 
 // Spec 2.2 and 2.8: the keys held this tick. y grows downwards, so up is moveY = -1 and
@@ -99,8 +99,10 @@ export interface GameState {
   readonly respawn: number;
   /** Spec 2.7: the score, which never goes down. */
   readonly score: number;
-  /** Spec 2.7: no hive and no enemy is left. */
+  /** Spec 2.7: no hive and no enemy is left, which wins the game. */
   readonly cleared: boolean;
+  /** Spec 2.2: the game is lost: the last life was lost 120 ticks ago. */
+  readonly gameOver: boolean;
   /** Spec 2.7: the ticks stepped since the new game, the time the level has taken. */
   readonly ticks: number;
   readonly motion: Motion;
@@ -133,6 +135,7 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
     respawn: 0,
     score: 0,
     cleared: false,
+    gameOver: false,
     ticks: 0,
     motion: {
       player: undefined,
@@ -152,8 +155,11 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
 // except while Space is held. A new shot stays where it appears until the next tick. The eyes
 // turn to the direction of a shot fired. The steps and shot moves are kept for drawing them (3).
 // Spec 2.7: the player's shots score their kills, and on the tick the last hive and snipe go,
-// the level is cleared and the bonus added.
+// the level is cleared and the bonus added. Spec 2.2: the game is over at the end of the
+// 120th tick after the last death, unless the level is cleared on or before it. A game that
+// is won or over is returned unchanged.
 export function step(state: GameState, input: InputState): GameState {
+  if (state.cleared || state.gameOver) return state;
   const { maze } = state;
   // The targets of the shots: the hives, then the snipes, then (for the snipes' shots) the
   // player. A hit holds its target's index in this list.
@@ -228,12 +234,13 @@ export function step(state: GameState, input: InputState): GameState {
     movedShots: flying.shots.length,
     movedSnipeShots: enemy.shots.length,
   };
-  const bonus = cleared && !state.cleared ? levelBonus(life.lives, ticks) : 0;
+  const bonus = cleared ? levelBonus(life.lives, ticks) : 0;
   const next = {
     ...state,
     ...life,
     score: state.score + points + bonus,
     cleared,
+    gameOver: !cleared && life.lives === 0 && state.respawn === 1,
     ticks,
     rng,
     hives: spawned.hives,
@@ -277,7 +284,7 @@ function slide(
 
 // Spec 2.2 and 2.10: the player that was not killed this tick. In play it stays so. Out of
 // play it waits; when the wait is over it comes back at a safe spot, or waits one more tick
-// when there is none.
+// when there is none. With no lives left it never comes back.
 function comeBack(
   state: GameState,
   player: Player,
@@ -288,6 +295,7 @@ function comeBack(
   if (respawn !== 1) {
     return { player, lives, respawn: Math.max(0, respawn - 1) };
   }
+  if (lives === 0) return { player, lives, respawn };
   const at = safeSpot(state.maze, player, hives, dangers);
   if (at === undefined) return { player, lives, respawn };
   return { player: { ...at, wait: 0 }, lives, respawn: 0 };

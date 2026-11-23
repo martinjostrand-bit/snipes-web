@@ -9,8 +9,12 @@ const ACCURACY = [
   2, 3, 4, 3, 4, 4, 3, 4, 3, 4, 4, 5, 3, 4, 3, 4, 3, 4, 3, 4, 4, 5, 4, 4, 5, 5,
 ];
 
+export function isSkill(skill: string): boolean {
+  return /^[A-Z][1-9]$/.test(skill);
+}
+
 export function checkSkill(skill: string): void {
-  if (!/^[A-Z][1-9]$/.test(skill)) {
+  if (!isSkill(skill)) {
     throw new RangeError(`Not a skill level from A1 to Z9: ${skill}`);
   }
 }
