@@ -16,13 +16,14 @@ const VOLUME = 0.1;
 
 // Spec 3: the beep for what happened in the ticks from `before` to `after`, or undefined if
 // nothing did. When several things happened, only the beep of the one listed first is played:
-// a death, a hive destroyed, a hit (on a hive, or a snipe killed), a shot the player fired.
+// a death (also by a ghost bursting), a hive destroyed, a hit (on a hive, or a snipe or ghost
+// killed), a shot the player fired.
 export function beepFor(before: GameState, after: GameState): Beep | undefined {
   if (after.lives < before.lives) return DEATH;
   if (after.hives.length < before.hives.length) return HIVE_DESTROYED;
   if (
     hiveHits(after) > hiveHits(before) ||
-    after.snipesKilled > before.snipesKilled
+    after.enemiesKilled > before.enemiesKilled
   ) {
     return HIT;
   }
