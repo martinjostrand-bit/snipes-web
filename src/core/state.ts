@@ -99,6 +99,8 @@ export interface GameState {
   readonly respawn: number;
   /** Spec 2.7: the score, which never goes down. */
   readonly score: number;
+  /** Spec 3: the snipes killed so far, by any shot, for the hit beep. */
+  readonly snipesKilled: number;
   /** Spec 2.7: no hive and no enemy is left, which wins the game. */
   readonly cleared: boolean;
   /** Spec 2.2: the game is lost: the last life was lost 120 ticks ago. */
@@ -134,6 +136,7 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
     lives: startLives(skill),
     respawn: 0,
     score: 0,
+    snipesKilled: 0,
     cleared: false,
     gameOver: false,
     ticks: 0,
@@ -239,6 +242,7 @@ export function step(state: GameState, input: InputState): GameState {
     ...state,
     ...life,
     score: state.score + points + bonus,
+    snipesKilled: state.snipesKilled + state.snipes.length - survivors.length,
     cleared,
     gameOver: !cleared && life.lives === 0 && state.respawn === 1,
     ticks,
