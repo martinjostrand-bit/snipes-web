@@ -1,8 +1,9 @@
+import { GHOST_SIZE } from "../core/ghosts";
 import { cellAt, wrap, type Grid, type Point } from "../core/grid";
 import { HIVE_SIZE, type Hive } from "../core/hives";
 import { PLAYER_SIZE } from "../core/player";
 import { SHOT_SIZE, type Shot } from "../core/shots";
-import { SNIPE_H, SNIPE_W, type Snipe } from "../core/snipes";
+import { facesRight, SNIPE_H, SNIPE_W, type Snipe } from "../core/snipes";
 import type { GameState, Slide } from "../core/state";
 
 // Spec 2.10 and 3: the view shows VIEW_COLS x VIEW_ROWS square cells of the maze, each CELL_PX
@@ -24,6 +25,7 @@ const PUPIL = "#141824";
 const BEAK = "#ff7a1a";
 const SNIPE = "#c868f0";
 const SPEAR = "#ece4ff";
+const GHOST = "#8ee8d0";
 // A shot's glow: its white core fades through `glow` to nothing at its edge.
 const PLAYER_SHOT = { glow: "#7fe0ff", edge: "rgba(127, 224, 255, 0)" };
 const SNIPE_SHOT = { glow: "#ff5a8c", edge: "rgba(255, 90, 140, 0)" };
@@ -41,15 +43,21 @@ export function viewOrigin(maze: Grid, player: Point): Point {
   return wrap(maze, { x: player.x - PLAYER_COL, y: player.y - PLAYER_ROW });
 }
 
-// Spec 3: where the player and each snipe, player's shot and snipe's shot of `state` are
-// drawn, `alpha` (0 to 1) of a tick after `step` made it, in maze cells that may be
+// Spec 3: where the player and each snipe, ghost, player's shot and snipe's shot of `state`
+// are drawn, `alpha` (0 to 1) of a tick after `step` made it, in maze cells that may be
 // fractional and are not wrapped. A step slides at an even speed from the cell it left,
 // arriving when the next step is due; a shot slides from its last position by `alpha`, and
 // one fired on this tick is drawn where it is. Edges are crossed the short way.
 export function drawnPositions(
   state: GameState,
   alpha: number,
-): { player: Point; snipes: Point[]; shots: Point[]; snipeShots: Point[] } {
+): {
+  player: Point;
+  snipes: Point[];
+  ghosts: Point[];
+  shots: Point[];
+  snipeShots: Point[];
+} {
   const { maze, motion } = state;
   const slid = (at: Point, slide: Slide | undefined): Point => {
     if (slide === undefined) return { x: at.x, y: at.y };
@@ -72,6 +80,7 @@ export function drawnPositions(
   return {
     player: slid(state.player, motion.player),
     snipes: state.snipes.map((s, i) => slid(s, motion.snipes[i])),
+    ghosts: state.ghosts.map((g, i) => slid(g, motion.ghosts[i])),
     shots: state.shots.map(flown(motion.movedShots)),
     snipeShots: state.snipeShots.map(flown(motion.movedSnipeShots)),
   };
@@ -117,6 +126,9 @@ export function drawGame(
   state.snipes.forEach((snipe, i) => {
     place(drawn.snipes[i], SNIPE_W, SNIPE_H, () => drawSnipe(ctx, snipe));
   });
+  for (const p of drawn.ghosts) {
+    place(p, GHOST_SIZE, GHOST_SIZE, () => drawFace(ctx, 16, GHOST));
+  }
   for (const p of drawn.shots) {
     place(p, SHOT_SIZE, SHOT_SIZE, () => drawShot(ctx, PLAYER_SHOT));
   }
@@ -269,20 +281,31 @@ function drawHive(ctx: CanvasRenderingContext2D, hive: Hive): void {
   disc(ctx, 32, 32, 12, colour);
 }
 
-// Spec 3: our own snipe, over its 4 x 2 cells (64 x 32 pixels): a round face with two eyes in
-// its left half and, in its right half, a spear pointing the way it moves.
-function drawSnipe(ctx: CanvasRenderingContext2D, { dx, dy }: Snipe): void {
-  disc(ctx, 16, 16, 13, SNIPE);
-  disc(ctx, 11, 13, 2.5, FLOOR);
-  disc(ctx, 21, 13, 2.5, FLOOR);
-  const u = unit(dx, dy);
-  const tip = { x: 46 + 12 * u.x, y: 16 + 12 * u.y };
+// Spec 3: a round face with two eyes over 2 x 2 cells (32 x 32 pixels) whose middle is `x`
+// pixels from the left: a snipe's face, or a ghost, which has no spear.
+function drawFace(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  colour: string,
+): void {
+  disc(ctx, x, 16, 13, colour);
+  disc(ctx, x - 5, 13, 2.5, FLOOR);
+  disc(ctx, x + 5, 13, 2.5, FLOOR);
+}
+
+// Spec 2.4 and 3: our own snipe, over its 4 x 2 cells (64 x 32 pixels): a round face on its
+// face half and, on its spear half, a spear pointing the way it moves.
+function drawSnipe(ctx: CanvasRenderingContext2D, snipe: Snipe): void {
+  const [face, spear] = facesRight(snipe) ? [48, 18] : [16, 46];
+  drawFace(ctx, face, SNIPE);
+  const u = unit(snipe.dx, snipe.dy);
+  const tip = { x: spear + 12 * u.x, y: 16 + 12 * u.y };
   ctx.strokeStyle = SPEAR;
   ctx.fillStyle = SPEAR;
   ctx.lineWidth = 3;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(46 - 12 * u.x, 16 - 12 * u.y);
+  ctx.moveTo(spear - 12 * u.x, 16 - 12 * u.y);
   ctx.lineTo(tip.x, tip.y);
   ctx.stroke();
   ctx.beginPath();

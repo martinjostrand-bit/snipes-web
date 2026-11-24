@@ -7,12 +7,12 @@ export const SNIPE_W = 4;
 export const SNIPE_H = 2;
 
 type Axis = -1 | 0 | 1;
-type Turn = 1 | -1;
+export type Turn = 1 | -1;
 
 // Spec 2.4: the 8 directions clockwise on the screen, from up (y grows downwards). A random
 // direction is item floor(v * 8) of this list, and turning one-eighth of a turn in sense
 // `turn` moves `turn` places along it.
-const DIRECTIONS: readonly (readonly [Axis, Axis])[] = [
+export const DIRECTIONS: readonly (readonly [Axis, Axis])[] = [
   [0, -1],
   [1, -1],
   [1, 0],
@@ -49,6 +49,12 @@ export interface Snipe {
 
 export function snipeBox(snipe: Point): Box {
   return { x: snipe.x, y: snipe.y, width: SNIPE_W, height: SNIPE_H };
+}
+
+// Spec 2.4: a snipe's face half is its right half when it goes down-left, left or up-left,
+// else its left half; the other is its spear half.
+export function facesRight(snipe: { readonly dx: number }): boolean {
+  return snipe.dx < 0;
 }
 
 // Spec 2.4: a new snipe at `at` draws its direction, then its turning sense. Its wait runs
@@ -96,7 +102,7 @@ function moveSnipe(
   snipe: Snipe,
   player: Point,
 ): [snipe: Snipe, next: Rng] {
-  const open = (i: number): boolean => canStep(maze, hives, snipe, i);
+  const open = (i: number): boolean => canStep(maze, hives, snipeBox(snipe), i);
   let [v, rng] = nextFloat(start);
   let dir = directionIndex(snipe.dx, snipe.dy);
   if (v >= KEEP_CHANCE || !open(dir)) {
@@ -124,17 +130,17 @@ function moveSnipe(
   return [{ ...snipe, ...to, dx, dy, wait: ticks - 1 }, rng];
 }
 
-// Spec 2.1, 2.4 and 2.10: whether the snipe at `from` can step in direction `i`: its
-// footprint there covers no wall and no hive cell, and a diagonal step has at least one of
-// the two straight positions on the way open too (no corner gaps).
-function canStep(
+// Spec 2.1, 2.4 and 2.10: whether a snipe or ghost whose footprint is `from` can step in
+// direction `i`: its footprint there covers no wall and no hive cell, and a diagonal step has
+// at least one of the two straight positions on the way open too (no corner gaps).
+export function canStep(
   maze: Grid,
   hives: readonly Box[],
-  from: Point,
+  from: Box,
   i: number,
 ): boolean {
   const open = (mx: number, my: number): boolean => {
-    const box = snipeBox({ x: from.x + mx, y: from.y + my });
+    const box = { ...from, x: from.x + mx, y: from.y + my };
     return fits(maze, box) && !hives.some((h) => overlaps(maze, box, h));
   };
   const [dx, dy] = DIRECTIONS[i];
@@ -167,7 +173,7 @@ function aimAndFire(
 // Spec 2.4: the shortest signed distances from `from` to `to` with wrap-around (exactly half
 // the maze counts as positive), and the direction to `to`: straight up or down when less than
 // 2 columns off, straight left or right when less than 2 rows off, otherwise diagonal.
-function toward(
+export function toward(
   maze: Grid,
   from: Point,
   to: Point,
@@ -182,6 +188,6 @@ function toward(
   return { dir: directionIndex(sx, sy), dx, dy };
 }
 
-function directionIndex(dx: number, dy: number): number {
+export function directionIndex(dx: number, dy: number): number {
   return DIRECTIONS.findIndex(([x, y]) => x === dx && y === dy);
 }

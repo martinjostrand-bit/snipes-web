@@ -175,7 +175,8 @@ if (canvas && ctx) {
         `Lives: ${state.lives}`,
         `Skill: ${skill}`,
         `Hives: ${state.hives.length}`,
-        `Snipes: ${state.snipes.length}`,
+        // Spec 3: the enemies left are the snipes and the ghosts.
+        `Enemies: ${state.snipes.length + state.ghosts.length}`,
       ].join("   ");
       drawHud(ctx, hud);
       text = [hud];
