@@ -307,7 +307,8 @@ test.describe("3 Presentation: the won screen, with ?won=1 (4.3)", () => {
     const errors = await openTitle(page, "/?won=1");
     await page.keyboard.press("Enter");
     await waitFor(page, "won");
-    for (const key of ["p", "m", "a", "Space", "ArrowUp", "Digit5"]) {
+    // M is left out: it toggles mute here (2.8, WP 14).
+    for (const key of ["p", "x", "a", "Space", "ArrowUp", "Digit5"]) {
       await page.keyboard.press(key);
       const won = await shown(page);
       expect(won.screen, key).toBe("won");
