@@ -2,6 +2,7 @@ import { advance, TICK_MS } from "./core/loop";
 import { isSkill } from "./core/skill";
 import { createGame, type GameState } from "./core/state";
 import { inputFromKeys } from "./input/keyboard";
+import { beepFor, play } from "./render/sound";
 import {
   CELL_PX,
   drawGame,
@@ -22,6 +23,9 @@ const TITLE = `Snipes Web v${__APP_VERSION__}`;
 // for each skill level.
 const SKILL_KEY = "snipes-web.skill";
 const bestKey = (skill: string): string => `snipes-web.best.${skill}`;
+// Spec 3: mute is stored locally too, as MUTED; anything else stored means sound is on.
+const MUTE_KEY = "snipes-web.mute";
+const MUTED = "on";
 
 // Spec 3: the game works without storage, and then nothing is stored.
 function load(key: string): string | null {
@@ -100,6 +104,11 @@ if (canvas && ctx) {
   let newBest = false;
   let state: GameState | undefined;
   let carriedMs = 0;
+  // Spec 3: sound starts muted only when storage holds the game's own muted value.
+  let muted = load(MUTE_KEY) === MUTED;
+  // Spec 3: the Web Audio context, made on the first key press that may start sound; none
+  // without Web Audio.
+  let audio: AudioContext | undefined;
 
   // Spec 2.1, 3 and 4.3: a new game at the skill level shown, from a new seed unless the URL
   // gives one.
@@ -119,6 +128,10 @@ if (canvas && ctx) {
       else if (/^[1-9]$/.test(key)) skill = skill[0] + key;
       else if (key === "Enter") start();
       best = loadBest(skill);
+    } else if (key.toUpperCase() === "M") {
+      // Spec 2.8 and 3: mute on every screen but the title, without changing the screen.
+      muted = !muted;
+      save(MUTE_KEY, muted ? MUTED : "off");
     } else if (screen === "ended") {
       if (key === "Enter" || key.toUpperCase() === "R") start();
       else if (key === "Escape") {
@@ -150,7 +163,7 @@ if (canvas && ctx) {
         `Skill level: ${skill}`,
         `Best: ${best}`,
         "Type a letter and a digit to change the skill level",
-        "Arrow keys move, Space faster, W A S D fire, P pause",
+        "Arrow keys move, Space faster, W A S D fire, P pause, M mute",
         "Press Enter to start",
       ];
       drawTitle(ctx, text);
@@ -190,12 +203,29 @@ if (canvas && ctx) {
 
   let last: number | undefined;
 
+  // Browsers let a page start sound only on a key press that counts as interacting with it,
+  // which Esc does not. Spec 3: if Web Audio is missing or fails, the game runs silently.
+  const startAudio = (): void => {
+    if (typeof window.AudioContext !== "function") return;
+    if ("userActivation" in navigator && !navigator.userActivation.isActive) {
+      return;
+    }
+    try {
+      audio ??= new AudioContext();
+      if (audio.state === "suspended") audio.resume().catch(() => undefined);
+    } catch {
+      // No sound.
+    }
+  };
+
   // Spec 2.8: the keys held, by KeyboardEvent.code.
   const held = new Set<string>();
   window.addEventListener("keydown", (e) => {
     held.add(e.code);
-    // Spec 3: screen and pause keys act on a key press, not on its auto-repeat. The new
-    // screen is shown at once, not only at the next frame.
+    startAudio();
+    // Spec 3: the keys that change the screen, the skill level, pause or mute act on a key
+    // press, not on its auto-repeat. The new screen is shown at once, not only at the next
+    // frame.
     if (!e.repeat) {
       press(e.key);
       show(last ?? 0);
@@ -210,12 +240,17 @@ if (canvas && ctx) {
     last = now;
     // Spec 4.3: no tick runs while paused.
     if (screen === "playing" && state !== undefined) {
+      const before = state;
       ({ state, carriedMs } = advance(
         state,
         inputFromKeys(held),
         carriedMs,
         elapsed,
       ));
+      const beep = beepFor(before, state);
+      if (beep !== undefined && audio !== undefined && !muted) {
+        play(audio, beep);
+      }
       if (state.cleared || state.gameOver) end(state.score);
     }
     show(now);

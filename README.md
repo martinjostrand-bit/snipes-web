@@ -2,7 +2,7 @@
 
 A single-player browser remake of Snipes, the 1982 text-mode maze shooter. Original code and graphics; only the gameplay is recreated. See [SPEC.md](SPEC.md) for the full specification.
 
-> Status: M0 (skeleton), M1 (maze and movement), M2 (shooting) and M3 (hives and snipes) are done. The game shows a random 256 × 240 maze of 15 × 11 corridors at 16 px per cell that scrolls smoothly with the player, a 4 × 4 bird head that slides from cell to cell with the arrow keys (Space = faster) and fires with W A S D in 8 directions, diagonally with two keys held, but not while Space is held; shots fly to the first wall and disappear. Hives, 3 to 10 by the skill digit, sit at random spots, change colour as they take hits, break on the 20th and spawn snipes every 2 seconds up to the digit's maximum. Snipes roam the corridors, chase the player with some randomness and fire along their way when it lines up with the player, more often the nearer it is; their shots stop at walls, damage hives and kill other snipes, and one shot from the player kills a snipe. A snipe's shot or touch kills the player and costs a life; after 2 seconds it comes back in the middle of the block farthest from where it died that has no hive in it and no snipe or snipe shot in or next to it. M4 (game flow) is under way: the page opens on a title screen where you type the skill level (a letter A–Z and a digit 1–9) and press Enter to start. The digit sets the lives; hives give 100 points and snipes 10, and clearing every hive and snipe wins the game with a bonus for lives left and time taken. Losing the last life ends the game 2 seconds later. P or Esc pauses; on the won and game-over screens Enter or R plays again and Esc goes back to the title. The HUD shows the score, lives, skill level, hives and snipes left, and the best score per skill level is kept in the browser. Sound comes next.
+> Status: M0 (skeleton), M1 (maze and movement), M2 (shooting), M3 (hives and snipes) and M4 (game flow) are done. The game shows a random 256 × 240 maze of 15 × 11 corridors at 16 px per cell that scrolls smoothly with the player, a 4 × 4 bird head that slides from cell to cell with the arrow keys (Space = faster) and fires with W A S D in 8 directions, diagonally with two keys held, but not while Space is held; shots fly to the first wall and disappear. Hives, 3 to 10 by the skill digit, sit at random spots, change colour as they take hits, break on the 20th and spawn snipes every 2 seconds up to the digit's maximum. Snipes roam the corridors, chase the player with some randomness and fire along their way when it lines up with the player, more often the nearer it is; their shots stop at walls, damage hives and kill other snipes, and one shot from the player kills a snipe. A snipe's shot or touch kills the player and costs a life; after 2 seconds it comes back in the middle of the block farthest from where it died that has no hive in it and no snipe or snipe shot in or next to it. The page opens on a title screen where you type the skill level (a letter A–Z and a digit 1–9) and press Enter to start. The digit sets the lives; hives give 100 points and snipes 10, and clearing every hive and snipe wins the game with a bonus for lives left and time taken. Losing the last life ends the game 2 seconds later. P or Esc pauses; on the won and game-over screens Enter or R plays again and Esc goes back to the title. The HUD shows the score, lives, skill level, hives and snipes left, and the best score per skill level is kept in the browser. Short beeps sound for a shot, a hit, a hive destroyed and a death; M mutes and unmutes on every screen but the title, and mute is kept in the browser. Letter keys work in either case. M5 (options and polish) comes next.
 
 **Live:** https://snipes-web.martin-jo-strand.workers.dev
 
@@ -43,13 +43,13 @@ To roll back: `npx wrangler rollback`, or Cloudflare dashboard → Worker → **
 
 ## Layout
 
-| Path          | Purpose                                                                    |
-| ------------- | -------------------------------------------------------------------------- |
-| `src/core/`   | Pure game logic (from WP 04)                                               |
-| `src/input/`  | Maps the keys held to an `InputState` (WP 06)                              |
-| `src/render/` | Draws the view around the player, the HUD and the screens (WP 07, 07b, 13) |
-| `src/main.ts` | Entry point; wires the layers, runs the loop and the screens               |
-| `tests/unit/` | Unit tests                                                                 |
-| `tests/e2e/`  | Playwright tests                                                           |
-| `.github/`    | Workflows and Dependabot                                                   |
-| `SPEC.md`     | Specification                                                              |
+| Path          | Purpose                                                                           |
+| ------------- | --------------------------------------------------------------------------------- |
+| `src/core/`   | Pure game logic (from WP 04)                                                      |
+| `src/input/`  | Maps the keys held to an `InputState` (WP 06)                                     |
+| `src/render/` | Draws the view, the HUD and the screens, and plays the beeps (WP 07, 07b, 13, 14) |
+| `src/main.ts` | Entry point; wires the layers, runs the loop and the screens                      |
+| `tests/unit/` | Unit tests                                                                        |
+| `tests/e2e/`  | Playwright tests                                                                  |
+| `.github/`    | Workflows and Dependabot                                                          |
+| `SPEC.md`     | Specification                                                                     |
