@@ -1,6 +1,6 @@
 # Snipes Web — Specification
 
-Nov 24, 2026 · @Martin · Draft v0.20
+Nov 25, 2026 · @Martin · Draft v0.21
 
 - v0.2: sections 5 and 7 filled in from the HundAlder project's GitHub and publishing setup.
 - v0.3: CI, build and quality principles adopted from the MissingFiles project (5.2–5.7, 6.3–6.4, 9, 11).
@@ -21,6 +21,7 @@ Nov 24, 2026 · @Martin · Draft v0.20
 - v0.18: letter keys work in either case; auto-repeat is ignored for the screen, skill-level, pause and mute keys; sound starts muted only from the game's own stored muted value (2.8, 3, 9.1, 11).
 - v0.19: ghosts as in the original's small snipes: with ghosts on, a hit on a snipe's spear half turns its face half into a ghost, and hives spawn only snipes; ghosts are blocked by walls, hives and the player, step every 5 ticks with the original's heading rule, never shoot and do not kill by contact, but a ghost whose diagonal step toward the player is blocked by the player may burst and kill them, at a chance set by the letter; ghosts make a respawn spot unsafe; a shot hits only the first of several overlapping entities; the respawn's place in the tick (2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.10, 3, 6.2, 9, 9.1, 10, 11).
 - v0.20: the test that a player killed by a deadly wall blocks no ghost moves from WP 15 to WP 17, which brings deadly walls (9.1, 11).
+- v0.21: wording only: a bouncing shot stays in place on the bounce tick; a resisting hive still stops a snipe's shot; a player's own bounced shot kills like a snipe's (2.5, 11).
 
 ## 1. Overview and goals
 
@@ -144,9 +145,9 @@ Ghosts appear only when the skill letter enables them (2.6). "Creep" in some des
   - only the vertical straight position blocked: its vertical direction reverses;
   - both blocked (a corner or corner gap), or neither (the end of a wall): both directions reverse, and it comes back the way it came.
 
-  A bounce uses that tick's move and one of its N bounces. With none left it stops at the next wall. A bounced shot can hit the player, including the player's own shot, and kills the player.
+  A bounce uses that tick's move and one of its N bounces: on that tick the shot stays where it is and only its direction changes, and it moves in the new direction from the next tick. With none left it stops at the next wall. A bounced shot can hit the player, including the player's own shot, and kills the player as a snipe's shot does, in the first stage of the tick (2.4).
 
-- A snipe's shot that hits a hive damages it like the player's shot, unless the letter makes hives resist snipe shots (2.6). A hive destroyed this way counts toward clearing the level and gives no points, unless one of the player's shots hit it on the same tick (2.7). As in the original, a snipe's shot also kills a snipe or ghost it hits, with no points and the same exception.
+- A snipe's shot that hits a hive damages it like the player's shot, unless the letter makes hives resist snipe shots (2.6); a resisting hive still stops the shot, which disappears, but takes no damage. A hive destroyed this way counts toward clearing the level and gives no points, unless one of the player's shots hit it on the same tick (2.7). As in the original, a snipe's shot also kills a snipe or ghost it hits, with no points and the same exception.
 
 ### 2.6 Skill level: letter A–Z + digit 1–9
 
@@ -674,6 +675,7 @@ Decisions are recorded here with their date when they are made, as in MissingFil
 | 2026-11-24 | Letter keys (P, R, M, title letters) work in either case; auto-repeat is ignored for the screen, skill-level, pause and mute keys; sound starts muted only from the game's own stored muted value, and a storage that can be read but not written still uses it                                                                                                                                                                                                                                                                                                                                                                                                                   | 2.8, 3, 9.1                                                 |
 | 2026-11-24 | Ghosts as in the original's small snipes: hives spawn only snipes, and with ghosts on a hit on a snipe's spear half leaves a ghost on its face half (a shot over both halves counts as the half it covers more of); ghosts are blocked by walls, hives and the player, step every 5 ticks with the original's heading rule, never shoot and don't kill by contact; a ghost blocked by the player on a diagonal step may burst, killing the player, at 1/128, 1/64 or 1/32 by letter (half the original's per-step chance, as ours step twice as often); ghosts make a respawn spot unsafe; a shot hits only the first of overlapping entities; the respawn comes last in the tick | 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.10, 3, 6.2, 9, 9.1, 10 |
 | 2026-11-24 | The deadly-wall case of "a player killed earlier in a tick blocks no ghost" is tested in WP 17, not WP 15, since deadly walls come in WP 17                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 9.1                                                         |
+| 2026-11-25 | Wording confirmed before WP 16: a bouncing shot stays in place on the bounce tick; a resisting hive still stops a snipe's shot, with no damage; a player's own bounced shot kills like a snipe's, in the first stage of the tick                                                                                                                                                                                                                                                                                                                                                                                                                                                  | 2.5                                                         |
 
 ## Sources
 
