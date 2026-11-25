@@ -35,9 +35,37 @@ export function movePlayer(
   return { ...player, x: to.x, y: to.y, wait };
 }
 
-// Spec 2.2 and 2.10: a diagonal takes the first possible of the diagonal step (open, and not
-// between two walls that touch at a corner, 2.1), the horizontal step and the vertical step,
-// each tested with the whole footprint. Undefined means the player stays put.
+// Spec 2.2 and 2.10: with deadly walls on, the player touches a wall when its step is due (a
+// direction is held and the wait is over) and the held direction is not a plain step.
+export function touchesWall(
+  maze: Grid,
+  player: Player,
+  input: InputState,
+): boolean {
+  const { moveX: dx, moveY: dy } = input;
+  return (
+    player.wait === 0 &&
+    (dx !== 0 || dy !== 0) &&
+    !plainStep(maze, player.x, player.y, dx, dy)
+  );
+}
+
+// Spec 2.1, 2.2 and 2.10: a straight step whose position is open, or a diagonal whose diagonal
+// position is open and that is not through a corner gap, each tested with the whole footprint.
+function plainStep(
+  maze: Grid,
+  x: number,
+  y: number,
+  dx: number,
+  dy: number,
+): boolean {
+  const open = (mx: number, my: number): boolean => fits(maze, x + mx, y + my);
+  if (!open(dx, dy)) return false;
+  return dx === 0 || dy === 0 || open(dx, 0) || open(0, dy);
+}
+
+// Spec 2.2 and 2.10: the plain step, or else for a diagonal the horizontal step and then the
+// vertical step, each tested with the whole footprint. Undefined means the player stays put.
 function nextMove(
   maze: Grid,
   x: number,
@@ -45,14 +73,11 @@ function nextMove(
   dx: number,
   dy: number,
 ): { dx: number; dy: number } | undefined {
-  const open = (mx: number, my: number): boolean => fits(maze, x + mx, y + my);
   if (dx === 0 && dy === 0) return undefined;
-  if (dx === 0 || dy === 0) return open(dx, dy) ? { dx, dy } : undefined;
-  const horizontal = open(dx, 0);
-  const vertical = open(0, dy);
-  if (open(dx, dy) && (horizontal || vertical)) return { dx, dy };
-  if (horizontal) return { dx, dy: 0 };
-  if (vertical) return { dx: 0, dy };
+  if (plainStep(maze, x, y, dx, dy)) return { dx, dy };
+  if (dx === 0 || dy === 0) return undefined;
+  if (fits(maze, x + dx, y)) return { dx, dy: 0 };
+  if (fits(maze, x, y + dy)) return { dx: 0, dy };
   return undefined;
 }
 

@@ -9,7 +9,7 @@ import {
   type Hive,
 } from "./hives";
 import { BLOCK_H, BLOCK_W, generateMazeFrom, WALL_X, WALL_Y } from "./maze";
-import { movePlayer, playerBox, type Player } from "./player";
+import { movePlayer, playerBox, touchesWall, type Player } from "./player";
 import { createRng, nextFloat, type Rng } from "./rng";
 import { fireShot, MOST_BOUNCES, moveShots, shotBox, type Shot } from "./shots";
 import { GHOST_POINTS, HIVE_POINTS, levelBonus, SNIPE_POINTS } from "./score";
@@ -174,9 +174,9 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
 // bounces off walls; a snipe's shot or a bounced shot that reaches the player in play, and
 // nothing before it, kills it at once. A snipe's shot does not damage a hive when the letter
 // makes hives resist it. With ghosts on, a snipe hit only on its spear half leaves a ghost on
-// its face half. The hives that are due spawn their snipes, the player in
-// play moves, the snipes step and fire, and the ghosts step and may burst, each in the order
-// they appeared; a snipe that touches the player in play after it moves or after the snipes
+// its face half. The hives that are due spawn their snipes, the player in play moves or, with
+// deadly walls on, dies where it stood on touching a wall (2.2), the snipes step and fire, and
+// the ghosts step and may burst, each in the order they appeared; a snipe that touches the player in play after it moves or after the snipes
 // step kills it, and so does a ghost that bursts. A player due to come back does so once the
 // ghosts have stepped. While a fire key is held a new shot appears next to the player in play,
 // independent of the way it moves, except while Space is held. A new shot stays where it
@@ -220,7 +220,12 @@ export function step(state: GameState, input: InputState): GameState {
   const hits = [...flying.hits, ...enemy.hits];
   // Spec 2.5 and 2.6: the hits that damage hives; a snipe's shot does no damage to a hive
   // that resists it.
-  const { bouncing, ghosts: ghostsOn, hivesResist } = features(state.skill);
+  const {
+    bouncing,
+    deadlyWalls,
+    ghosts: ghostsOn,
+    hivesResist,
+  } = features(state.skill);
   const damage = hivesResist ? flying.hits : hits;
   const snipeHit = (i: number, by = hits): boolean =>
     by.includes(firstSnipe + 2 * i) || by.includes(firstSnipe + 2 * i + 1);
@@ -253,7 +258,13 @@ export function step(state: GameState, input: InputState): GameState {
     maxEnemies(state.skill) - ghosts.length,
   );
   const shotDown = hits.includes(targets.length);
-  const inPlay = state.respawn === 0 && !shotDown;
+  // Spec 2.2: with deadly walls on, a player in play that touches a wall dies where it stood.
+  const walled =
+    deadlyWalls &&
+    state.respawn === 0 &&
+    !shotDown &&
+    touchesWall(maze, state.player, input);
+  const inPlay = state.respawn === 0 && !shotDown && !walled;
   const moved = inPlay ? movePlayer(maze, state.player, input) : state.player;
   const touches = (all: readonly Snipe[]) =>
     inPlay && all.some((s) => overlaps(maze, snipeBox(s), playerBox(moved)));
@@ -300,7 +311,7 @@ export function step(state: GameState, input: InputState): GameState {
     snipes.length === 0 &&
     stepped.ghosts.length === 0;
   const life =
-    shotDown || touched || stepped.burst >= 0
+    shotDown || walled || touched || stepped.burst >= 0
       ? {
           player: moved,
           lives: Math.max(0, state.lives - 1),
