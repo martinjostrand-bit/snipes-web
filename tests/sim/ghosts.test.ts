@@ -823,12 +823,14 @@ describe("6.2 Invariants: ghosts in whole games at letters with ghosts", () => {
 });
 
 describe("6.2 Determinism with ghosts", () => {
+  // At F9, ghosts and no other feature (2.6), so that the guard below does not depend on how
+  // bouncing shots (WP 16) or deadly walls (WP 17) change the game.
   it.each([0, 1, 42, 2 ** 32 - 1])(
-    "seed %d at Z9 and the same input log give the same game, ghosts and all",
+    "seed %d at F9 and the same input log give the same game, ghosts and all",
     (seed) => {
       const log = inputLog(seed + 9, MINUTE);
-      let a = createGame(seed, "Z9");
-      let b = createGame(seed, "Z9");
+      let a = createGame(seed, "F9");
+      let b = createGame(seed, "F9");
       let ghosts = 0;
       for (const keys of log) {
         a = step(a, keys);
