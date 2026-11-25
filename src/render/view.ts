@@ -47,7 +47,8 @@ export function viewOrigin(maze: Grid, player: Point): Point {
 // are drawn, `alpha` (0 to 1) of a tick after `step` made it, in maze cells that may be
 // fractional and are not wrapped. A step slides at an even speed from the cell it left,
 // arriving when the next step is due; a shot slides from its last position by `alpha`, and
-// one fired on this tick is drawn where it is. Edges are crossed the short way.
+// one fired on this tick, or that bounced on it (2.5), is drawn where it is. Edges are
+// crossed the short way.
 export function drawnPositions(
   state: GameState,
   alpha: number,
@@ -72,16 +73,16 @@ export function drawnPositions(
     };
   };
   const flown =
-    (moved: number) =>
+    (moved: number, bounced: readonly boolean[] = []) =>
     (shot: Shot, i: number): Point => {
-      const back = i < moved ? 1 - alpha : 0;
+      const back = i < moved && !bounced[i] ? 1 - alpha : 0;
       return { x: shot.x - shot.dx * back, y: shot.y - shot.dy * back };
     };
   return {
     player: slid(state.player, motion.player),
     snipes: state.snipes.map((s, i) => slid(s, motion.snipes[i])),
     ghosts: state.ghosts.map((g, i) => slid(g, motion.ghosts[i])),
-    shots: state.shots.map(flown(motion.movedShots)),
+    shots: state.shots.map(flown(motion.movedShots, motion.bouncedShots)),
     snipeShots: state.snipeShots.map(flown(motion.movedSnipeShots)),
   };
 }
