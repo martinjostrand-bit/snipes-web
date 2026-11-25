@@ -2,6 +2,15 @@
 
 Each release covers one milestone (spec 5.5 and 9). Versions follow semantic versioning.
 
+## 1.0.0 – 2026-11-25 – M5 Options and polish
+
+- The skill letter now switches the original's four features on or off: A to C have none, Z has all of them.
+- Ghosts (D–F, I–L, O, P, S–Z): a snipe hit on its spear half leaves a ghost on its face half. Ghosts are fast, chase the player closely and do not shoot, but one may burst next to the player and kill it. One shot kills a ghost for 10 points. The HUD now shows the enemies left, snipes and ghosts together.
+- Bouncing shots (G–L, Q–Z): the player's diagonal shots bounce off walls 1 to 8 times before they stop. A bounced shot can kill the player.
+- Deadly walls (M–Z): walking into a wall, or diagonally through a corner gap, kills the player instead of sliding along it.
+- Hives resist snipe shots (W–Z): a snipe's shot stops at a hive without damaging it.
+- A shot that covers several enemies hits only the first of them.
+
 ## 0.5.0 – 2026-11-24 – M4 Game flow
 
 - The page opens on a title screen with the name, the version, the skill level and the best score for it. Type a letter A–Z and a digit 1–9 to change the skill level, and press Enter to start. The skill level last started is remembered.
