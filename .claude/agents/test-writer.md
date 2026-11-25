@@ -14,7 +14,7 @@ You write the tests for one work package of Snipes Web, before anyone implements
    - Unit tests in `tests/unit/`, simulations in `tests/sim/`, browser tests in `tests/e2e/`.
    - Each `describe` names the spec section it checks, for example `describe("2.3 Hives", …)`.
    - Test behaviour through the public API, not implementation details. Where the spec names an API, such as `step(state, input)` in 4.3, use it. Otherwise choose the smallest plain-function API that fits, and list it in your report.
-4. Run `npm test` (and `npm run test:e2e` for browser tests). The new tests must fail now, because the behaviour is missing, not because a test is broken.
+4. Run `npm test` (and `npm run test:e2e` for browser tests). The new tests must fail now, because the behaviour is missing, not because a test is broken, unless the work package's row in 9.1 says they may already pass (spec 9.2 step 1).
 
 Rules:
 
@@ -22,4 +22,4 @@ Rules:
 - Do not commit. `/implement-wp` commits your tests.
 - Do not change the specification. If a requirement is unclear, untestable or conflicts with another, stop and report it.
 
-End with: the test files you wrote, the API the developer must implement (names and signatures), and why each new test fails now.
+End with: the test files you wrote, the API the developer must implement (names and signatures), and why each new test fails now, or, for tests the 9.1 row allows to pass already, that they pass.
