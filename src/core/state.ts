@@ -10,8 +10,8 @@ import {
 } from "./hives";
 import { BLOCK_H, BLOCK_W, generateMazeFrom, WALL_X, WALL_Y } from "./maze";
 import { movePlayer, playerBox, type Player } from "./player";
-import { createRng, type Rng } from "./rng";
-import { fireShot, moveShots, shotBox, type Shot } from "./shots";
+import { createRng, nextFloat, type Rng } from "./rng";
+import { fireShot, MOST_BOUNCES, moveShots, shotBox, type Shot } from "./shots";
 import { GHOST_POINTS, HIVE_POINTS, levelBonus, SNIPE_POINTS } from "./score";
 import {
   accuracy,
@@ -83,6 +83,8 @@ export interface Motion {
   readonly ghosts: readonly (Slide | undefined)[];
   /** How many of the shots, from the first, moved on this tick; the rest were fired on it. */
   readonly movedShots: number;
+  /** For each of those, whether it bounced instead, staying where it was (2.5). */
+  readonly bouncedShots: readonly boolean[];
   readonly movedSnipeShots: number;
 }
 
@@ -160,6 +162,7 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
       snipes: [],
       ghosts: [],
       movedShots: 0,
+      bouncedShots: [],
       movedSnipeShots: 0,
     },
   };
@@ -167,9 +170,11 @@ export function createGame(seed: number, skill = DEFAULT_SKILL): GameState {
 
 // Spec 2.2 to 2.5 and 4.3, in this order: the shots in flight move on, and each one that is
 // on a hive, snipe or ghost (fired onto it, or it stepped onto the shot) or enters one hits the
-// first of them in that order and disappears; a snipe's shot that reaches the player in play,
-// and nothing before it, kills it at once. With ghosts on, a snipe hit only on its spear half
-// leaves a ghost on its face half. The hives that are due spawn their snipes, the player in
+// first of them in that order and disappears; a player's diagonal shot with bounces left
+// bounces off walls; a snipe's shot or a bounced shot that reaches the player in play, and
+// nothing before it, kills it at once. A snipe's shot does not damage a hive when the letter
+// makes hives resist it. With ghosts on, a snipe hit only on its spear half leaves a ghost on
+// its face half. The hives that are due spawn their snipes, the player in
 // play moves, the snipes step and fire, and the ghosts step and may burst, each in the order
 // they appeared; a snipe that touches the player in play after it moves or after the snipes
 // step kills it, and so does a ghost that bursts. A player due to come back does so once the
@@ -185,9 +190,10 @@ export function step(state: GameState, input: InputState): GameState {
   if (state.cleared || state.gameOver) return state;
   const { maze } = state;
   // The targets of the shots, in the order a shot hits them (2.5): the hives, then each
-  // snipe's left and right halves, then the ghosts, then (for the snipes' shots) the player.
-  // A hit holds its target's index in this list. A 2 x 2 shot over both halves of a snipe
-  // covers as many cells of each, so it counts as the left half, the first (2.4).
+  // snipe's left and right halves, then the ghosts, then (for the snipes' shots and bounced
+  // shots) the player. A hit holds its target's index in this list. A 2 x 2 shot over both
+  // halves of a snipe covers as many cells of each, so it counts as the left half, the first
+  // (2.4).
   const firstSnipe = state.hives.length;
   const firstGhost = firstSnipe + 2 * state.snipes.length;
   const targets = [
@@ -195,19 +201,34 @@ export function step(state: GameState, input: InputState): GameState {
     ...state.snipes.flatMap(halves),
     ...state.ghosts.map(ghostBox),
   ];
-  const flying = moveShots(maze, state.shots, targets);
-  const enemy = moveShots(maze, state.snipeShots, [
-    ...targets,
-    ...(state.respawn === 0 ? [playerBox(state.player)] : []),
-  ]);
+  const player = state.respawn === 0 ? [playerBox(state.player)] : [];
+  // Each of the player's shots flies on its own, so that a shot that bounced, the only kind
+  // that turns, is known and drawn in place (3).
+  const flights = state.shots.map((s) => {
+    const { shots, hits } = moveShots(maze, [s], targets, player);
+    return {
+      shots,
+      hits,
+      turned: shots.map((t) => t.dx !== s.dx || t.dy !== s.dy),
+    };
+  });
+  const flying = {
+    shots: flights.flatMap((f) => f.shots),
+    hits: flights.flatMap((f) => f.hits),
+  };
+  const enemy = moveShots(maze, state.snipeShots, [...targets, ...player]);
   const hits = [...flying.hits, ...enemy.hits];
+  // Spec 2.5 and 2.6: the hits that damage hives; a snipe's shot does no damage to a hive
+  // that resists it.
+  const { bouncing, ghosts: ghostsOn, hivesResist } = features(state.skill);
+  const damage = hivesResist ? flying.hits : hits;
   const snipeHit = (i: number, by = hits): boolean =>
     by.includes(firstSnipe + 2 * i) || by.includes(firstSnipe + 2 * i + 1);
   const ghostHit = (i: number, by = hits): boolean =>
     by.includes(firstGhost + i);
   // Spec 2.4: the ghost of each snipe hit only on its spear half, in the snipes' order, after
   // the ghosts already there.
-  const newGhosts = features(state.skill).ghosts
+  const newGhosts = ghostsOn
     ? state.snipes
         .filter((s, i) => {
           const face = firstSnipe + 2 * i + (facesRight(s) ? 1 : 0);
@@ -227,11 +248,11 @@ export function step(state: GameState, input: InputState): GameState {
   const spawned = spawnSnipes(
     maze,
     state.rng,
-    hitHives(state.hives, hits),
+    hitHives(state.hives, damage),
     survivors,
     maxEnemies(state.skill) - ghosts.length,
   );
-  const shotDown = enemy.hits.includes(targets.length);
+  const shotDown = hits.includes(targets.length);
   const inPlay = state.respawn === 0 && !shotDown;
   const moved = inPlay ? movePlayer(maze, state.player, input) : state.player;
   const touches = (all: readonly Snipe[]) =>
@@ -267,7 +288,7 @@ export function step(state: GameState, input: InputState): GameState {
       state.hives.filter(
         (h, i) =>
           byPlayer(i) &&
-          h.hits + hits.filter((j) => j === i).length >= HIVE_HITS,
+          h.hits + damage.filter((j) => j === i).length >= HIVE_HITS,
       ).length +
     SNIPE_POINTS *
       state.snipes.filter((_, i) => snipeHit(i, flying.hits)).length +
@@ -290,10 +311,18 @@ export function step(state: GameState, input: InputState): GameState {
           ...stepped.ghosts.map(ghostBox),
           ...snipeShots.map(shotBox),
         ]);
-  const shot =
+  let shot =
     life.respawn > 0 || state.reload > 0 || input.fast
       ? undefined
       : fireShot(maze, playerBox(life.player), input.fireX, input.fireY);
+  // Spec 2.5 and 4.3: a diagonal shot fired with bouncing on draws its N bounces, the last
+  // draw of the tick.
+  let rng = stepped.rng;
+  if (shot && bouncing && shot.dx !== 0 && shot.dy !== 0) {
+    let value: number;
+    [value, rng] = nextFloat(rng);
+    shot = { ...shot, bounces: Math.floor(value * MOST_BOUNCES) + 1 };
+  }
   const unstepped = ghosts.filter(kept);
   const ghostSlid = ghostSlides.filter(kept);
   const motion = {
@@ -306,6 +335,7 @@ export function step(state: GameState, input: InputState): GameState {
     snipes: snipes.map((s, i) => slide(spawned.snipes[i], s, slides[i])),
     ghosts: stepped.ghosts.map((g, i) => slide(unstepped[i], g, ghostSlid[i])),
     movedShots: flying.shots.length,
+    bouncedShots: flights.flatMap((f) => f.turned),
     movedSnipeShots: enemy.shots.length,
   };
   const bonus = cleared ? levelBonus(life.lives, ticks) : 0;
@@ -320,7 +350,7 @@ export function step(state: GameState, input: InputState): GameState {
     cleared,
     gameOver: !cleared && life.lives === 0 && state.respawn === 1,
     ticks,
-    rng: stepped.rng,
+    rng,
     hives: spawned.hives,
     snipes,
     ghosts: stepped.ghosts,

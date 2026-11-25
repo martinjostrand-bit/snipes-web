@@ -3,11 +3,18 @@ import { cellAt, wrap, type Box, type Grid, type Point } from "./grid";
 // Spec 2.10: a shot covers SHOT_SIZE x SHOT_SIZE cells; its position is the top-left one.
 export const SHOT_SIZE = 2;
 
+// Spec 2.5: a bouncing shot draws N, from 1 to MOST_BOUNCES, when it is fired.
+export const MOST_BOUNCES = 8;
+
 export interface Shot {
   readonly x: number;
   readonly y: number;
   readonly dx: -1 | 0 | 1;
   readonly dy: -1 | 0 | 1;
+  /** Spec 2.5: the bounces it has left; none when not given. */
+  readonly bounces?: number;
+  /** Spec 2.5: it has bounced, so it can hit the player. */
+  readonly bounced?: boolean;
 }
 
 export function shotBox(shot: Point): Box {
@@ -41,30 +48,46 @@ function spawnOffset(d: -1 | 0 | 1, size: number): number {
 // A shot disappears when that cell would put its footprint on a wall or squeeze it diagonally
 // through a corner gap, and when its footprint already covers a cell of a target's footprint
 // (a shot fired onto a target) or enters one; then `hits` gets that target's index. Walls are
-// unharmed.
+// unharmed. A diagonal shot with bounces left bounces instead of stopping: it stays where it is
+// and turns, using one bounce. Once it has bounced, `afterBounce` are its targets too, after
+// all of `targets`.
 export function moveShots(
   maze: Grid,
   shots: readonly Shot[],
   targets: readonly Box[],
+  afterBounce: readonly Box[] = [],
 ): { shots: Shot[]; hits: number[] } {
   const flying: Shot[] = [];
   const hits: number[] = [];
   for (const shot of shots) {
     const { x, y, dx, dy } = shot;
-    const struck = targets.findIndex((t) => overlaps(maze, shot, t));
+    const all = shot.bounced ? [...targets, ...afterBounce] : targets;
+    const struck = all.findIndex((t) => overlaps(maze, shot, t));
     if (struck >= 0) {
       hits.push(struck);
       continue;
     }
     const next = wrap(maze, { x: x + dx, y: y + dy });
-    const blocked =
-      !fits(maze, next.x, next.y) ||
-      (dx !== 0 &&
-        dy !== 0 &&
-        !fits(maze, next.x, y) &&
-        !fits(maze, x, next.y));
-    if (blocked) continue;
-    const hit = targets.findIndex((t) => overlaps(maze, next, t));
+    const diagonal = dx !== 0 && dy !== 0;
+    const across = !fits(maze, next.x, y);
+    const down = !fits(maze, x, next.y);
+    if (!fits(maze, next.x, next.y) || (diagonal && across && down)) {
+      const left = shot.bounces ?? 0;
+      if (diagonal && left > 0) {
+        // Spec 2.5: when only one straight position is blocked, the direction along that axis
+        // reverses; when both or neither are, it comes back the way it came.
+        const back = across === down;
+        flying.push({
+          ...shot,
+          dx: back || across ? (-dx as -1 | 1) : dx,
+          dy: back || down ? (-dy as -1 | 1) : dy,
+          bounces: left - 1,
+          bounced: true,
+        });
+      }
+      continue;
+    }
+    const hit = all.findIndex((t) => overlaps(maze, next, t));
     if (hit >= 0) hits.push(hit);
     else flying.push({ ...shot, ...next });
   }
